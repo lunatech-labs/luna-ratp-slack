@@ -14,10 +14,8 @@ libraryDependencies ++= Seq(
   jdbc,
   ehcache,
   ws,
-  "com.lunatech" % "scala-slack-client" % "0.1.0",
+  "com.lunatech" % "scala-slack-client" % "0.2.1",
   specs2 % Test,
   guice)
 
-unmanagedResourceDirectories in Test <+=  baseDirectory ( _ /"target/web/public/test" )  
-
-      
+unmanagedResourceDirectories in Test <+=  baseDirectory ( _ /"target/web/public/test" )

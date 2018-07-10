@@ -8,6 +8,13 @@ case class TrainDestination(trainType: String, trainCode: String, station: Strin
 case class Transportation(code: String, name: String, directions: String, id: String)
 case class Station(slug: String, name: String)
 
+case class Status(line: String, slug: String, title: String, message: String)
+case class Traffic(id: Int, transport: String, line: String, slug: String, title: String, message: String)
+
+object Traffic {
+  implicit val format = Json.format[Traffic]
+}
+
 object Station {
   implicit val format = Json.format[Station]
 }
@@ -19,4 +26,5 @@ object TrainSchedule{
 object Transportation {
   implicit val format = Json.format[Transportation]
 }
+
 

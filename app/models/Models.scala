@@ -9,7 +9,13 @@ case class Transportation(code: String, name: String, directions: String, id: St
 case class Station(slug: String, name: String)
 
 case class Status(line: String, slug: String, title: String, message: String)
-case class Traffic(id: Int, transport: String, line: String, slug: String, title: String, message: String)
+
+case class Traffic(transport: String, line: String, slug: String, title: String, message: String)
+
+
+object Status {
+  implicit val format = Json.format[Status]
+}
 
 object Traffic {
   implicit val format = Json.format[Traffic]

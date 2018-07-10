@@ -1,7 +1,5 @@
 package services
 
-import java.net.URI
-
 import javax.inject.{Inject, Singleton}
 import models.{Station, TrainDestination, TrainSchedule, Transportation}
 import play.api.libs.json._
@@ -60,6 +58,19 @@ class RATPService @Inject()(ws: WSClient, config: Configuration)(implicit ec: Ex
       .get()
       .flatMap(response => {
         (response.json \ "result" \ "stations").validate[Seq[Station]] match {
+          case JsSuccess(s, _) => Future.successful(TrainResultSuccess(s))
+          case _ => Future.successful(getErrorMessage(response.json))
+        }
+      })
+  }
+
+  def getTraffics(transportType: String): Future[TrainResult[Seq[Station]]] = {
+    val url = config.get[String]("ratp.api.base") + "traffic"
+
+    ws.url(url)
+      .get()
+      .flatMap(response => {
+        (response.json \ "result" \ transportType).validate[Seq[Station]] match {
           case JsSuccess(s, _) => Future.successful(TrainResultSuccess(s))
           case _ => Future.successful(getErrorMessage(response.json))
         }

@@ -65,7 +65,7 @@ class RATPService @Inject()(ws: WSClient, config: Configuration)(implicit ec: Ex
   }
 
   def getTraffics(transportType: String): Future[TrainResult[Seq[Status]]] = {
-    val url = config.get[String]("ratp.api.base") + "traffic"
+    val url = config.get[String]("ratp.api.base") + "/traffic"
 
     ws.url(url)
       .get()

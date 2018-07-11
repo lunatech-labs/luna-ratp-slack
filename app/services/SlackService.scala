@@ -1,18 +1,47 @@
 package services
 
+import com.lunatech.slack.client.api.SlackClient
 import com.lunatech.slack.client.models._
 import javax.inject.{Inject, Singleton}
-import models.TrainSchedule
-import play.api.Logger
+import models.{Status, TrainSchedule}
+import play.api.{Configuration, Logger}
 
 import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
-class SlackService @Inject()(ratp: RATPService) {
+class SlackService @Inject()(ratp: RATPService, config: Configuration) {
+  val slackClient = SlackClient(config.get[String]("slack.api.token"))
+
 
   private def intercalate[T](a: List[T], b: List[T]): List[T] = a match {
     case head :: tail => head :: intercalate(b, tail)
     case _ => b
+  }
+
+  private def mapTransport(transport: String) = {
+    val transformation = Map(
+      "metros" -> "Métro",
+      "rers" -> "RER"
+    )
+
+    transformation.getOrElse(transport, transport)
+  }
+
+  private def getStatusColor(slug: String) = {
+    if (slug == "normal") {
+      "#4BB543"
+    } else if (slug.contains("normal")) {
+      "#FFA500"
+    } else {
+      "#B33A3A"
+    }
+  }
+
+  def getStatusAttachment(transport: String, status: Status): AttachmentField = {
+    AttachmentField("status", "status")
+      .withTitle(status.title + " sur la ligne " + mapTransport(transport) + " " + status.line)
+      .withText(status.message)
+      .withColor(getStatusColor(status.slug))
   }
 
   def toAttachmentNextTrains(trains: Seq[TrainSchedule], fallback: String, callback: String): AttachmentField = {

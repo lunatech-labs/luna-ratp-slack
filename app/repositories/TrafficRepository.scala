@@ -2,6 +2,7 @@ package repositories
 
 import javax.inject.{Inject, Singleton}
 import models.{Status, Traffic}
+import play.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
 
@@ -15,9 +16,9 @@ class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(impl
   import profile.api._
 
   private class UserTable(tag: Tag) extends Table[Traffic](tag, "TRAFFIC") {
-    def transport = column[String]("TRANSPORT")
-
     def line = column[String]("LINE", O.PrimaryKey)
+
+    def transport = column[String]("TRANSPORT")
 
     def slug = column[String]("SLUG")
 
@@ -32,6 +33,11 @@ class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(impl
 
   def create(transport: String, status: Status): Future[Int] = db.run {
     traffics += Traffic(transport, status.line, status.slug, status.title, status.message)
+  }
+
+  def update(status: Status) = db.run {
+    val s = for {c <- traffics if c.line === status.line} yield (c.slug, c.title, c.message)
+    s.update((status.slug, status.title, status.message))
   }
 
   def list(): Future[Seq[Traffic]] = db.run {

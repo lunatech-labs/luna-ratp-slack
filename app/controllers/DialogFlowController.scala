@@ -11,10 +11,9 @@ import services.{RATPService, SlackService, TrainResultError, TrainResultSuccess
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class DialogFlowController @Inject()(cc: ControllerComponents, config: Configuration, ratp: RATPService, slackService: SlackService)
+class DialogFlowController @Inject()(cc: ControllerComponents, ratp: RATPService, slackService: SlackService)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
-  val slackClient = SlackClient(config.get[String]("slack.api.token"))
 
   def dialogFlow() = Action.async { request =>
     println(request.body.toString)

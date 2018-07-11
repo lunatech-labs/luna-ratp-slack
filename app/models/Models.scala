@@ -12,6 +12,8 @@ case class Status(line: String, slug: String, title: String, message: String)
 
 case class Traffic(transport: String, line: String, slug: String, title: String, message: String)
 
+case class TrafficSubscription(userId: String, line: String)
+
 
 object Status {
   implicit val format = Json.format[Status]

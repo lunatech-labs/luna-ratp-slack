@@ -5,9 +5,9 @@
 
 GET         /                    controllers.HomeController.index
 POST        /hello               controllers.SlackController.nextRER
+POST        /subscribe           controllers.SlackController.subscribe
 POST        /interactive         controllers.SlackController.interactive
 POST        /suggestions         controllers.SlackController.suggestions
-+nocsrf
 POST        /dialogFlow          controllers.DialogFlowController.dialogFlow
 
 # Map static resources from the /public folder to the /assets URL path

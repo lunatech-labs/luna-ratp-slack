@@ -8,5 +8,13 @@ CREATE TABLE Traffic (
   "MESSAGE" VARCHAR(255),
 );
 
+CREATE TABLE TRAFFIC_SUBSCRIPTION (
+  "LINE" VARCHAR(255),
+  "USERID" VARCHAR(255),
+
+  PRIMARY KEY ("LINE", "USERID")
+)
+
 # --- !Downs
 drop table Traffic;
+drop table TRAFFIC_SUBSCRIPTION;

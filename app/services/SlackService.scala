@@ -62,15 +62,29 @@ class SlackService @Inject()(ratp: RATPService, config: Configuration) {
     selectMessage.addAttachment(selectTransportAttachment.addAction(selectTransportMenu))
   }
 
+  def selectSubscriptionMessage: Message = {
+    subscriptionMessage.addAttachment(subscriptionAttachment.addAction(selectTransportMenu))
+  }
+
   def selectCodeMessage(selectedOption: SelectedOption)(implicit ec: ExecutionContext): Future[Message] = {
     val firstMenu = getMenuWithSelectedValue(selectTransportMenu, selectedOption.value)
-
 
     getCodeMenu(selectedOption.value) map {
       menu =>
         selectMessage
           .addAttachment(selectTransportAttachment.addAction(firstMenu).withColor("#4BB543"))
           .addAttachment(selectCodeAttachment.addAction(menu))
+    }
+  }
+
+  def selectCodeSubscription(selectedOption: SelectedOption)(implicit ec: ExecutionContext): Future[Message] = {
+    val firstMenu = getMenuWithSelectedValue(selectTransportMenu, selectedOption.value)
+
+    getCodeMenu(selectedOption.value) map {
+      menu =>
+        subscriptionMessage
+          .addAttachment(selectTransportAttachment.addAction(firstMenu).withColor("#4BB543"))
+          .addAttachment(selectCodeSubscriptionAttachment.addAction(menu.withConfirmation("Voulez-vous vraiment vous abonnez à cette ligne ?")))
     }
   }
 
@@ -135,7 +149,11 @@ class SlackService @Inject()(ratp: RATPService, config: Configuration) {
 
   private val selectMessage: Message = Message(text = "Selectionnez votre moyen de transport")
 
+  private val subscriptionMessage: Message = Message(text = "Selectionnez la ligne pour laquelle pour souhaitez vous abonnez")
+
   private val selectTransportAttachment: AttachmentField = AttachmentField(fallback = "Transport Selection", callback_id = "select_transport")
+
+  private val subscriptionAttachment: AttachmentField = AttachmentField(fallback = "Subscription Selection", callback_id = "select_subscription")
 
   private val selectTransportMenu: StaticMenu =
     StaticMenu(name = "Moyen de transport", "Moyen de transport")
@@ -145,6 +163,7 @@ class SlackService @Inject()(ratp: RATPService, config: Configuration) {
       .addOption(text = "Tramway", value = "tramways")
 
   private val selectCodeAttachment: AttachmentField = AttachmentField(fallback = "Code selection", callback_id = "select_code")
+  private val selectCodeSubscriptionAttachment: AttachmentField = AttachmentField(fallback = "Code selection", callback_id = "select_code_subscription")
 
   private val selectCodeMenu: StaticMenu =
     StaticMenu(name = "Code du transport", "Code du transport")

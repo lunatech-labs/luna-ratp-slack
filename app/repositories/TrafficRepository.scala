@@ -15,7 +15,7 @@ class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(impl
   import dbConfig._
   import profile.api._
 
-  private class UserTable(tag: Tag) extends Table[Traffic](tag, "TRAFFIC") {
+  private class TrafficTable(tag: Tag) extends Table[Traffic](tag, "TRAFFIC") {
     def line = column[String]("LINE", O.PrimaryKey)
 
     def transport = column[String]("TRANSPORT")
@@ -29,7 +29,7 @@ class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(impl
     def * = (transport, line, slug, title, message) <> ((Traffic.apply _).tupled, Traffic.unapply)
   }
 
-  private val traffics = TableQuery[UserTable]
+  private val traffics = TableQuery[TrafficTable]
 
   def create(transport: String, status: Status): Future[Int] = db.run {
     traffics += Traffic(transport, status.line, status.slug, status.title, status.message)

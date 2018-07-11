@@ -13,7 +13,7 @@ scalaVersion := "2.12.2"
 libraryDependencies ++= Seq(
   ehcache,
   ws,
-  "com.lunatech" % "scala-slack-client" % "0.2.1",
+  "com.lunatech" % "scala-slack-client" % "0.2.3",
   "com.typesafe.play" %% "play-slick" % "3.0.1",
   "com.typesafe.play" %% "play-slick-evolutions" % "3.0.1",
   "com.h2database" % "h2" % "1.4.197",

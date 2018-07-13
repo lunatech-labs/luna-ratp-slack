@@ -1,7 +1,7 @@
 package repositories
 
 import javax.inject.Inject
-import models.{Traffic, TrafficSubscription}
+import models.TrafficSubscription
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
@@ -16,9 +16,12 @@ class TrafficSubscriptionRepository @Inject()(dbConfigProvider: DatabaseConfigPr
 
   private class TrafficSubscriptionTable(tag: Tag) extends Table[TrafficSubscription](tag, "TRAFFIC_SUBSCRIPTION") {
     def userId = column[String]("USERID", O.PrimaryKey)
+
     def line = column[String]("LINE", O.PrimaryKey)
 
-    def * = (userId, line) <> ((TrafficSubscription.apply _).tupled, TrafficSubscription.unapply)
+    def transport = column[String]("TRANSPORT", O.PrimaryKey)
+
+    def * = (userId, transport, line) <> ((TrafficSubscription.apply _).tupled, TrafficSubscription.unapply)
   }
 
   private val subscriptions = TableQuery[TrafficSubscriptionTable]
@@ -33,7 +36,18 @@ class TrafficSubscriptionRepository @Inject()(dbConfigProvider: DatabaseConfigPr
     subscriptions.filter(_.line === line).map(_.userId).result
   }
 
-  def getAll(): Future[Seq[TrafficSubscription]] = db.run {
+  def getAll: Future[Seq[TrafficSubscription]] = db.run {
     subscriptions.result
+  }
+
+  def getSubscriptionByUser(userId: String): Future[Seq[TrafficSubscription]] = db.run {
+    subscriptions.filter(_.userId === userId).result
+  }
+
+  def delete(subscription: TrafficSubscription): Future[Int] = db.run {
+    subscriptions
+      .filter(_.userId === subscription.userId)
+      .filter(_.line === subscription.line)
+      .delete
   }
 }

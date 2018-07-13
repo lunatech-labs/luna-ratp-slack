@@ -77,6 +77,20 @@ class RATPService @Inject()(ws: WSClient, config: Configuration)(implicit ec: Ex
       })
   }
 
+  def nameOfType(transport: String): String = {
+    if (transport == "rers") {
+      "RER"
+    } else if (transport == "metros") {
+      "Métro"
+    } else if (transport == "tramways") {
+      "Tramway"
+    } else if (transport == "bus") {
+      "bus"
+    } else {
+      transport
+    }
+  }
+
   private def getErrorMessage[T](json: JsValue): TrainResultError[T] = {
     (json \ "result" \ "message").validate[String] match {
       case JsSuccess(s, _) => TrainResultError(new Exception(s"Error : $s"))

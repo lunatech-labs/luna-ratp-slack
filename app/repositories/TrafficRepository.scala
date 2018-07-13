@@ -36,6 +36,7 @@ class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(impl
   }
 
   def update(status: Status) = db.run {
+    Logger.info(s"updated $status")
     val s = for {c <- traffics if c.line === status.line} yield (c.slug, c.title, c.message)
     s.update((status.slug, status.title, status.message))
   }

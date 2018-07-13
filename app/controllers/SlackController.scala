@@ -26,11 +26,47 @@ class SlackController @Inject()(
 
   implicit val messageFormat = Json.format[Message]
 
-  def subscribe = Action {request =>
+  def unsubscribe = Action.async { request =>
+    Logger.info(request.body.toString)
+    val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
+
+    val lines = payload match {
+      case Success(s) =>
+        val userId = s.user_id
+        Logger.info("Unsubscribe caller: " + userId)
+        subscriptionRepo.getSubscriptionByUser(userId)
+
+      case Failure(e) =>
+        Logger.error(e.getMessage)
+        Future.successful(List())
+    }
+
+    val message = lines map { subscriptions =>
+      Logger.debug(subscriptions.toList.toString)
+      val fields = subscriptions.map(subscription => BasicField(s"" +
+        s"${ratp.nameOfType(subscription.transport)} ${subscription.line}",
+        s"${subscription.transport}_${subscription.line}"))
+
+      if (fields.isEmpty) {
+        Message("Vous n'êtes abonné à aucune ligne de la RATP")
+      } else {
+        val menu = StaticMenu("unsubscribe", "Choisir une ligne", options = Some(fields))
+          .withConfirmation("Voulez-vous vraiment vous désabonner ?")
+
+        Message("Choisissez la ligne pour vous désabonnez des alertes.")
+          .addAttachment(AttachmentField("select_unsub", "select_unsub").addAction(menu))
+      }
+    }
+
+    message map (m => Ok(Json.toJson(m)))
+
+  }
+
+  def subscribe = Action {
     Ok(Json.toJson(slackService.selectSubscriptionMessage))
   }
 
-  def nextRER = Action { request =>
+  def nextRER = Action {
     Ok(Json.toJson(slackService.selectTransportMessage))
   }
 
@@ -54,9 +90,31 @@ class SlackController @Inject()(
         // Subscription
         case "select_subscription" => selectSubscription(s)
         case "select_code_subscription" => subscribeToTransport(s)
+
+        // Unsubscription
+        case "select_unsub" => unsubscribeToTransport(s)
+
+        // Not implemented
         case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
       }
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    }
+  }
+
+  private def unsubscribeToTransport(payload: Payload) = {
+    val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
+
+    (options match {
+      case Some(opt) if opt.length == 1 =>
+        val values = opt.head.value.split("_")
+
+        val user = payload.user.id
+        val transport = values(0)
+        val line = values(1)
+
+        subscriptionRepo.delete(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous vous êtes désabonné à la ligne $line"))
+    }) recoverWith {
+      case _: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage("Vous êtes déjà abonnés à cette ligne"))))
     }
   }
 
@@ -67,9 +125,10 @@ class SlackController @Inject()(
       case Some(opt) if opt.length == 1 =>
         val values = opt.head.value.split("_")
         val user = payload.user.id
+        val transport = values(0)
         val line = values(1)
 
-        subscriptionRepo.create(TrafficSubscription(user, line)).map(_ => Ok(s"Vous êtes abonnés à la ligne $line" ))
+        subscriptionRepo.create(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous êtes abonné à la ligne $line"))
     }) recoverWith {
       case _: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage("Vous êtes déjà abonnés à cette ligne"))))
     }

@@ -24,7 +24,7 @@ class RATPService @Inject()(ws: WSClient, config: Configuration)(implicit ec: Ex
 
     Logger.info(url)
 
-    ws.url(url.replaceAll("’", "'"))
+    ws.url(url)
       .get()
       .flatMap(response => {
         Logger.info(response.body)

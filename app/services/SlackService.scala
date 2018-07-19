@@ -3,7 +3,7 @@ package services
 import com.lunatech.slack.client.api.SlackClient
 import com.lunatech.slack.client.models._
 import javax.inject.{Inject, Singleton}
-import models.{Status, TrainSchedule}
+import models.{AlertForm, Status, TrainSchedule}
 import play.api.{Configuration, Logger}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -35,6 +35,92 @@ class SlackService @Inject()(ratp: RATPService, config: Configuration) {
     } else {
       "#B33A3A"
     }
+  }
+
+  def getAlertMessage(alertForm: AlertForm)(implicit ec: ExecutionContext): Future[Message] = {
+    val stationFuture = alertTransportMenu(alertForm)
+
+    stationFuture.map { station =>
+      val hour = AttachmentField("hour", "choose_hour")
+        .withTitle("Choisissez l'heure")
+        .addAction(hourMenu)
+        .addAction(minutesMenu)
+      Message("Ajouter une alerte : ")
+        .addAttachment(station)
+        .addAttachment(hour)
+        .addAttachment(AttachmentField(s"validation_${alertForm.id}", "validation")
+          .addAction(Button(s"validate_${alertForm.id}", "Valider").asPrimaryButton)
+          .addAction(Button(s"cancel_${alertForm.id}", "Annuler").asDangerButton.withConfirmation("Êtes-vous sûr ?")))
+    }
+  }
+
+  private def alertTransportMenu(alertForm: AlertForm)(implicit ec: ExecutionContext): Future[AttachmentField] = {
+    val station = AttachmentField("station", s"alert_station").withTitle("Station")
+
+    val firstMenuBase =
+      StaticMenu(s"type_${alertForm.id}", "Le moyen de transport")
+        .addOption(text = "RER", value = "rers")
+        .addOption(text = "Métro", value = "metros")
+
+    val firstMenu = alertForm.transportType
+      .map(value => getMenuWithSelectedValue(firstMenuBase, value))
+      .getOrElse(firstMenuBase)
+
+    val secondMenu = getAlertCode(alertForm)
+    val thirdMenu = getAlertStation(alertForm)
+
+    secondMenu.zip(thirdMenu) map {
+      case (s, t) =>
+        station
+          .addAction(firstMenu)
+          .addAction(s)
+          .addAction(t)
+    }
+
+  }
+
+  private def getAlertCode(alertForm: AlertForm)(implicit ec: ExecutionContext) = {
+    val menu: Future[StaticMenu] = alertForm.transportType match {
+      case Some(transport) => ratp.getCodes(transport) flatMap {
+        case TrainResultSuccess(codes) =>
+          val fields = codes.map(s => BasicField(s.name, s"${s.code}"))
+          Future.successful(StaticMenu(s"code_${alertForm.id}", "Select code", options = Some(fields)))
+        case TrainResultError(e) => Future.failed(e)
+      }
+      case None => Future.successful(StaticMenu(s"code__${alertForm.id}", "Select code"))
+    }
+
+    menu.map(m => alertForm.transportCode.map(current => getMenuWithSelectedValue(m, current)).getOrElse(m))
+  }
+
+  private def getAlertStation(alertForm: AlertForm)(implicit ec: ExecutionContext) = {
+    val menu: Future[StaticMenu] = (alertForm.transportType, alertForm.transportCode) match {
+      case (Some(transport), Some(code)) => ratp.getStations(transport, code) flatMap {
+        case TrainResultSuccess(stations) =>
+          val fields = stations.map(s => BasicField(s.name, s"${s.name}"))
+          Future.successful(StaticMenu(s"station_${alertForm.id}", "Select code", options = Some(fields)))
+        case TrainResultError(e) => Future.failed(e)
+      }
+      case _ => Future.successful(StaticMenu(s"station_${alertForm.id}", "Select code"))
+    }
+
+    menu.map(m => alertForm.transportStation.map(current => getMenuWithSelectedValue(m, current)).getOrElse(m))
+  }
+
+  private def hourMenu = {
+    val fields = for {
+      i <- 0 until 24
+    } yield BasicField(i.toString, i.toString)
+
+    StaticMenu("hour_menu", "Choisir l'heure", options = Some(fields))
+  }
+
+  private def minutesMenu = {
+    val fields = for {
+      i <- 0 until 60
+    } yield BasicField(i.toString, i.toString)
+
+    StaticMenu("minutes_menu", "Choisir la minute", options = Some(fields))
   }
 
   def getStatusAttachment(transport: String, status: Status): AttachmentField = {
@@ -141,10 +227,11 @@ class SlackService @Inject()(ratp: RATPService, config: Configuration) {
       case _ => BasicField("", "")
     }
 
-    StaticMenu(selectTransportMenu.name,
-      selectTransportMenu.text,
-      options = menu.options,
-      selected_options = Some(Seq(selectedField)))
+    menu.copy(selected_options = Some(Seq(selectedField)))
+//    StaticMenu(selectTransportMenu.name,
+//      selectTransportMenu.text,
+//      options = menu.options,
+//      selected_options = Some(Seq(selectedField)))
   }
 
   private val selectMessage: Message = Message(text = "Selectionnez votre moyen de transport")

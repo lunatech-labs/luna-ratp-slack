@@ -4,12 +4,13 @@ package controllers
 import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
 import javax.inject.Inject
-import models.{TrafficSubscription, TrainDestination}
+import models.{AlertForm, TrafficSubscription, TrainDestination}
 import play.api.libs.json.Json
 import play.api.mvc._
 import play.api.{Configuration, Logger}
-import repositories.{TrafficRepository, TrafficSubscriptionRepository}
+import repositories.{AlertFormRepository, TrafficRepository, TrafficSubscriptionRepository}
 import services._
+import util.IdGenerator
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -20,11 +21,28 @@ class SlackController @Inject()(
   ratp: RATPService,
   slackService: SlackService,
   subscriptionRepo: TrafficSubscriptionRepository,
-  trafficRepo: TrafficRepository)
+  trafficRepo: TrafficRepository,
+  alertFormRepository: AlertFormRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
+  def alert = Action.async { request =>
+    val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
 
-  implicit val messageFormat = Json.format[Message]
+    val message: Future[Message] = payload match {
+      case Success(s) =>
+        val userId = s.user_id
+        val alertForm = AlertForm(IdGenerator.getRandomId(userId), userId)
+        Logger.info(alertForm.id)
+        alertFormRepository.create(alertForm)
+
+        slackService.getAlertMessage(alertForm)
+      case Failure(e) =>
+        Logger.error(e.getMessage)
+        Future.successful(slackService.errorMessage(e.getMessage))
+    }
+
+    message.map(m => Ok(Json.toJson(m)))
+  }
 
   def unsubscribe = Action.async { request =>
     Logger.info(request.body.toString)
@@ -94,8 +112,12 @@ class SlackController @Inject()(
         // Unsubscription
         case "select_unsub" => unsubscribeToTransport(s)
 
+        //AlertForm
+        case "alert_station" => alertFormChangeType(s)
+
         // Not implemented
-        case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
+        //case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
+        case _ => Future.successful(Ok)
       }
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
@@ -106,13 +128,13 @@ class SlackController @Inject()(
 
     (options match {
       case Some(opt) if opt.length == 1 =>
-        val values = opt.head.value.split("_")
-
         val user = payload.user.id
-        val transport = values(0)
-        val line = values(1)
 
-        subscriptionRepo.delete(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous vous êtes désabonné à la ligne $line"))
+        opt.head.value.split("_") match {
+          case Array(transport, line) =>
+            subscriptionRepo.delete(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous vous êtes désabonné à la ligne $line"))
+          case _ => Future.failed(new Exception("Il faut appeler la commande /unsubscribe"))
+        }
     }) recoverWith {
       case _: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage("Vous êtes déjà abonnés à cette ligne"))))
     }
@@ -123,12 +145,14 @@ class SlackController @Inject()(
 
     (options match {
       case Some(opt) if opt.length == 1 =>
-        val values = opt.head.value.split("_")
         val user = payload.user.id
-        val transport = values(0)
-        val line = values(1)
 
-        subscriptionRepo.create(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous êtes abonné à la ligne $line"))
+        opt.head.value.split("_") match {
+          case Array(transport, line) =>
+            subscriptionRepo.create(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous êtes abonné à la ligne $line"))
+          case _ => Future.failed(new Exception("Il faut appeler la commande /subscribe"))
+        }
+
     }) recoverWith {
       case _: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage("Vous êtes déjà abonnés à cette ligne"))))
     }
@@ -137,76 +161,95 @@ class SlackController @Inject()(
   private def showTrains(payload: Payload) = {
     val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
 
-    options match {
+    (options match {
       case Some(opt) if opt.length == 1 =>
         val values = opt.head
 
-        val params = values.value.split("_")
-
-        val transport = params(0)
-        val code = params(1)
-        val station = params(2)
-
-        nextRer(transport, code, station)
+        values.value.split("_") match {
+          case Array(transport, code, station) => nextRer(transport, code, station)
+          case _ => Future.failed(new Exception("Il faut appeler la commande /RATP"))
+        }
+    }) recoverWith {
+      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
+  }
+
+  private def alertFormChangeType(payload: Payload) = {
+    val res = for {
+      action <- payload.actions
+      firstAction <- action.headOption
+      name <- Some(firstAction.name)
+      value <- firstAction.selected_options.flatMap(x => x.headOption).map(x => x.value)
+    } yield (name, value)
+
+    Logger.info(res.toString)
+
+    val idOpt: Future[Option[String]] = res match {
+      case Some((name, value)) if name.trim.startsWith("type_") =>
+        Logger.info("TYPE")
+        alertFormRepository.updateType(name.trim.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+      case Some((name, value)) if name.startsWith("code_") =>
+        Logger.info("CODE")
+        alertFormRepository.updateCode(name.trim.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+      case Some((name, value)) if name.startsWith("station_") =>
+        Logger.info("STATION")
+        alertFormRepository.updateStation(name.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+      case _ =>
+        Logger.info("NONE")
+        Future.successful(None)
+    }
+
+    idOpt flatMap {
+      case Some(id) =>
+        alertFormRepository.getAlertForm(id)
+          .flatMap { form =>
+            Logger.info(form.toString)
+            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+          }
+      case None => Future.successful(Ok)
+    }
+  } recoverWith {
+    case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
   }
 
   private def selectCode(payload: Payload) = {
-    val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
-    (options match {
-      case Some(opt) if opt.length == 1 =>
-        val transport = opt.head
-
-        Logger.info(transport.toString)
-
-        slackService.selectCodeMessage(transport).map(message => Ok(Json.toJson(message)))
-      case _ => Future.successful(Ok(Json.toJson(slackService.errorMessage("No train found"))))
-    }) recoverWith {
-      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
-    }
+    select(payload, slackService.selectCodeMessage)
   }
 
   private def selectStation(payload: Payload) = {
-    val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
-
-    (options match {
-      case Some(opt) if opt.length == 1 =>
-        val transport = opt.head
-
-        Logger.info(transport.toString)
-
-        slackService.selectStationMessage(transport).map(message => Ok(Json.toJson(message)))
-      case _ => Future.successful(Ok(Json.toJson(slackService.errorMessage("No train found"))))
-    }) recoverWith {
-      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
-    }
+    select(payload, slackService.selectStationMessage)
   }
 
   private def selectSubscription(payload: Payload) = {
+    select(payload, slackService.selectCodeSubscription)
+  }
+
+  private def select(payload: Payload, function: SelectedOption => Future[Message])(implicit ec: ExecutionContext): Future[Result] = {
     val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
 
     val message = options match {
       case Some(opt) if opt.length == 1 =>
         val transport = opt.head
 
-        slackService.selectCodeSubscription(transport).map(message => Ok(Json.toJson(message)))
+        function(transport).map(message => Ok(Json.toJson(message)))
       case _ => Future.successful(Ok(Json.toJson(slackService.errorMessage("No train found"))))
     }
 
     message recoverWith {
       case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
-
   }
 
-  private def nextRer(transport: String, code: String, station: String) = {
+  private def nextRer(transport: String, code: String, station: String): Future[Result] = {
     val destination = TrainDestination(transport, code, station)
 
-    (ratp.nextTrain(destination) map {
+    ratp.nextTrain(destination) map {
       case TrainResultSuccess(s) => {
         val attachments = slackService.toAttachmentNextTrains(s, "trains", "trains")
 
-        val message = Message(Some(s"_Voici les prochains *${transport.toUpperCase} $code* à *$station*_")).addAttachment(attachments)
+        val message = Message(Some(s"_Voici les prochains *${
+          transport.toUpperCase
+        } $code* à *$station*_")).addAttachment(attachments)
 
         Ok(Json.toJson(message))
       }
@@ -214,8 +257,6 @@ class SlackController @Inject()(
       case TrainResultError(e) => Ok(
         Json.toJson(slackService.errorMessage(e.getMessage))
       )
-    }) recoverWith {
-      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
   }
 

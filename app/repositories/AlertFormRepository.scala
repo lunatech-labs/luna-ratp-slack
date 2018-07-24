@@ -1,7 +1,10 @@
 package repositories
 
+import java.time.LocalDate
+
 import javax.inject.Inject
-import models.AlertForm
+import models.TypeOfAlert.TypeOfAlert
+import models.{AlertForm, TypeOfAlert}
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
@@ -15,6 +18,11 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
   import dbConfig._
   import profile.api._
 
+  private implicit val typeOfAlertEnumMapper: BaseColumnType[TypeOfAlert] = MappedColumnType.base[TypeOfAlert, String](
+    e => e.toString,
+    s => TypeOfAlert.withName(s)
+  )
+
   private class AlertFormTable(tag: Tag) extends Table[AlertForm](tag, "ALERTFORM") {
 
     def id = column[String]("ID", O.PrimaryKey)
@@ -27,13 +35,20 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
 
     def transportStation = column[Option[String]]("TRANSPORTSTATION")
 
+    def typeOfAlert = column[TypeOfAlert]("TYPEOFALERT")
+
+    def day = column[Option[Int]]("DAY")
+
+    def month = column[Option[Int]]("MONTH")
+
+    def year = column[Option[Int]]("YEAR")
+
     def hour = column[Option[Int]]("HOUR")
 
     def minutes = column[Option[Int]]("MINUTES")
 
     def * =
-      (id, userId, transportType, transportCode, transportStation, hour, minutes) <> ((AlertForm.apply _).tupled, AlertForm.unapply)
-
+      (id, userId, typeOfAlert, transportType, transportCode, transportStation, day, month, year, hour, minutes) <> ((AlertForm.apply _).tupled, AlertForm.unapply)
   }
 
   private val alerts = TableQuery[AlertFormTable]
@@ -42,12 +57,58 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
     alerts += alertForm
   }
 
+  def updateAlertType(id: String, typeOfAlert: TypeOfAlert): Future[Int] = db.run {
+    alerts.filter(_.id === id).map(_.typeOfAlert).update(typeOfAlert)
+  }
+
+  def updateDay(id: String, day: Int): Future[Int] = db.run {
+    alerts.filter(_.id === id).map(_.day).update(Some(day))
+  }
+
+  def updateMonth(id: String, month: Int): Future[Int] = {
+    val alert = getAlertForm(id)
+
+    alert.flatMap { a =>
+      val year = a.year.getOrElse(LocalDate.now.getYear)
+      val dayInMonth = LocalDate.of(year, month, 1).lengthOfMonth
+
+      db.run {
+        alerts
+          .filter(_.id === id)
+          .map(x => (x.day, x.month))
+          .update((Some(Math.min(a.day.getOrElse(1), dayInMonth)), Some(month)))
+      }
+    }
+  }
+
+  def updateYear(id: String, year: Int): Future[Int] = {
+    val alert = getAlertForm(id)
+    val nbDay = LocalDate.of(year, 1, 1).lengthOfYear()
+
+    alert.flatMap { a =>
+      val month = a.month.getOrElse(1)
+      val day =
+        if (month == 2 && nbDay == 365) {
+          Math.min(28, a.day.getOrElse(1))
+        } else {
+          a.day.getOrElse(1)
+        }
+
+      db.run {
+        alerts
+          .filter(_.id === id)
+          .map(x => (x.day, x.year))
+          .update(Some(day), Some(year))
+      }
+    }
+  }
+
   def updateType(id: String, `type`: String): Future[Int] = db.run {
     alerts
       .filter(_.id === id)
       .map(element => (element.transportType, element.transportCode, element.transportStation))
       .update(Some(`type`), None, None)
-  } map {x =>
+  } map { x =>
     Logger.info(x.toString)
     x
   }
@@ -57,7 +118,7 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
       .filter(_.id === id)
       .map(element => (element.transportCode, element.transportStation))
       .update(Some(code), None)
-  } map {x =>
+  } map { x =>
     Logger.info(x.toString)
     x
   }

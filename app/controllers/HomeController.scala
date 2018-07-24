@@ -3,6 +3,7 @@ package controllers
 
 import java.time.DayOfWeek._
 
+import com.lunatech.slack.client.models.ChatEphemeral
 import javax.inject.Inject
 import models.Alert
 import play.api.Logger
@@ -11,7 +12,7 @@ import play.api.mvc.{AbstractController, ControllerComponents}
 import repositories.{AlertRepository, TrafficRepository, TrafficSubscriptionRepository}
 import services.SlackService
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 
 class HomeController @Inject()(cc: ControllerComponents, trafficRepo: TrafficRepository, repository: TrafficSubscriptionRepository, slackService: SlackService, alertRepo: AlertRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {

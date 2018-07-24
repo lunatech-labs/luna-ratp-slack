@@ -1,10 +1,12 @@
 package controllers
 
 
+import java.time.LocalDateTime
+
 import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
 import javax.inject.Inject
-import models.{AlertForm, TrafficSubscription, TrainDestination}
+import models.{AlertForm, TrafficSubscription, TrainDestination, TypeOfAlert}
 import play.api.libs.json.Json
 import play.api.mvc._
 import play.api.{Configuration, Logger}
@@ -31,7 +33,7 @@ class SlackController @Inject()(
     val message: Future[Message] = payload match {
       case Success(s) =>
         val userId = s.user_id
-        val alertForm = AlertForm(IdGenerator.getRandomId(userId), userId)
+        val alertForm = AlertForm.getFormForTime(IdGenerator.getRandomId(userId), userId, LocalDateTime.now)
         Logger.info(alertForm.id)
         alertFormRepository.create(alertForm)
 
@@ -114,6 +116,9 @@ class SlackController @Inject()(
 
         //AlertForm
         case "alert_station" => alertFormChangeType(s)
+        case "alert_type" => alertFormChangeTimeType(s)
+        case "choose_time" => alertChangeTime(s)
+        case "validation" => validateAlertForm(s)
 
         // Not implemented
         //case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
@@ -122,6 +127,8 @@ class SlackController @Inject()(
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
   }
+
+  private def validateAlertForm(payload: Payload) = ???
 
   private def unsubscribeToTransport(payload: Payload) = {
     val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))
@@ -174,26 +181,83 @@ class SlackController @Inject()(
     }
   }
 
-  private def alertFormChangeType(payload: Payload) = {
-    val res = for {
+  private def getInteractionValue(payload: Payload) = {
+    for {
       action <- payload.actions
       firstAction <- action.headOption
       name <- Some(firstAction.name)
       value <- firstAction.selected_options.flatMap(x => x.headOption).map(x => x.value)
     } yield (name, value)
+  }
+
+  private def alertFormChangeTimeType(payload: Payload) = {
+    val res = getInteractionValue(payload)
+
+    val idOpt: Future[Option[String]] = res match {
+      case Some((name, value)) if name.startsWith("timeType_") =>
+        alertFormRepository.updateAlertType(name.trim.split("_")(1), TypeOfAlert.withName(value)).map(_ => Some(name.trim.split("_")(1)))
+      case _ =>
+        Future.successful(None)
+    }
+
+    idOpt flatMap {
+      case Some(id) =>
+        alertFormRepository.getAlertForm(id)
+          .flatMap { form =>
+            Logger.info(form.toString)
+            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+          }
+      case None => Future.successful(Ok)
+    } recoverWith {
+      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    }
+
+  }
+
+  private def alertChangeTime(payload: Payload) = {
+    val res = getInteractionValue(payload)
+
+    val idOpt: Future[Option[String]] = res match {
+      case Some((name, value)) if name.trim.startsWith("day_") =>
+        alertFormRepository.updateDay(name.trim.split("_")(1), value.toInt).map(_ => Some(name.split("_")(1)))
+      case Some((name, value)) if name.trim.startsWith("month_") =>
+        alertFormRepository.updateMonth(name.trim.split("_")(1), value.toInt).map(_ => Some(name.split("_")(1)))
+      case Some((name, value)) if name.trim.startsWith("year_") =>
+        alertFormRepository.updateYear(name.trim.split("_")(1), value.toInt).map(_ => Some(name.split("_")(1)))
+      case Some((name, value)) if name.trim.startsWith("hour_") =>
+        alertFormRepository.updateHour(name.trim.split("_")(1), value.toInt).map(_ => Some(name.split("_")(1)))
+      case Some((name, value)) if name.trim.startsWith("minute_") =>
+        alertFormRepository.updateMinutes(name.trim.split("_")(1), value.toInt).map(_ => Some(name.split("_")(1)))
+    }
+
+    idOpt flatMap {
+      case Some(id) =>
+        alertFormRepository.getAlertForm(id)
+          .flatMap { form =>
+            Logger.info(form.toString)
+            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+          }
+      case None => Future.successful(Ok)
+    } recoverWith {
+      case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    }
+  }
+
+  private def alertFormChangeType(payload: Payload) = {
+    val res = getInteractionValue(payload)
 
     Logger.info(res.toString)
 
     val idOpt: Future[Option[String]] = res match {
       case Some((name, value)) if name.trim.startsWith("type_") =>
         Logger.info("TYPE")
-        alertFormRepository.updateType(name.trim.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+        alertFormRepository.updateType(name.trim.split("_")(1), value).map(_ => Some(name.split("_")(1)))
       case Some((name, value)) if name.startsWith("code_") =>
         Logger.info("CODE")
-        alertFormRepository.updateCode(name.trim.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+        alertFormRepository.updateCode(name.trim.split("_")(1), value).map(_ => Some(name.split("_")(1)))
       case Some((name, value)) if name.startsWith("station_") =>
         Logger.info("STATION")
-        alertFormRepository.updateStation(name.split("_")(1), value).map(_=>Some(name.split("_")(1)))
+        alertFormRepository.updateStation(name.split("_")(1), value).map(_ => Some(name.split("_")(1)))
       case _ =>
         Logger.info("NONE")
         Future.successful(None)

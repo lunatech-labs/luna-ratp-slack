@@ -1,5 +1,8 @@
 package models
 
+import java.time.LocalDateTime
+
+import models.TypeOfAlert.TypeOfAlert
 import play.api.libs.json.Json
 
 case class TrainSchedule(code: Option[String], message: String, destination: String)
@@ -22,15 +25,41 @@ case class Alert(id: Int, userId: String, trainType: String, trainCode: String, 
 
 case class DayAlert(id: Int, alertId: Int, day: Int)
 
+object TypeOfAlert extends Enumeration {
+  type TypeOfAlert = Value
+  val IN = Value("IN")
+  val AT = Value("AT")
+  val REPEAT = Value("REPEAT")
+}
+
 case class AlertForm(
   id: String,
   userId: String,
+  typeOfAlert: TypeOfAlert,
   transportType: Option[String] = None,
   transportCode: Option[String] = None,
   transportStation: Option[String] = None,
+  day: Option[Int] = None,
+  month: Option[Int]= None,
+  year: Option[Int] = None,
   hour: Option[Int] = None,
   minutes: Option[Int] = None
 )
+
+object AlertForm {
+  def getFormForTime(
+    id: String,
+    userId: String,
+    time: LocalDateTime
+  ): AlertForm = new AlertForm(id,
+    userId,
+    typeOfAlert = TypeOfAlert.AT,
+    day = Some(time.getDayOfMonth),
+    month = Some(time.getMonthValue),
+    year = Some(time.getYear),
+    hour = Some(time.getHour),
+    minutes = Some(time.getMinute))
+}
 
 object DayAlert {
   implicit val format = Json.format[DayAlert]

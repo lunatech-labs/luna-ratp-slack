@@ -1,7 +1,7 @@
 package controllers
 
 
-import java.time.LocalDateTime
+import java.time.{DayOfWeek, LocalDateTime}
 
 import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
@@ -118,6 +118,7 @@ class SlackController @Inject()(
         case "alert_station" => alertFormChangeType(s)
         case "alert_type" => alertFormChangeTimeType(s)
         case "choose_time" => alertChangeTime(s)
+        case "day_button" => pushButton(s)
         case "validation" => validateAlertForm(s)
 
         // Not implemented
@@ -125,6 +126,27 @@ class SlackController @Inject()(
         case _ => Future.successful(Ok)
       }
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    }
+  }
+
+  private def pushButton(payload: Payload) = {
+    val values = for {
+      action <- payload.actions.flatMap(x => x.headOption)
+      value <- action.value
+    } yield (action.name, value)
+
+    Logger.debug(values.toString)
+
+    values match {
+      case Some((id, value)) =>
+        alertFormRepository.createOrDeleteDay(id, DayOfWeek.of(value.toInt)).flatMap { _ =>
+          alertFormRepository.getAlertForm(id)
+            .flatMap { form =>
+              Logger.info(form.toString)
+              slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+            }
+        }
+      case _ => Future.successful(Ok(Json.toJson(Message("Une erreur s'est produite"))))
     }
   }
 

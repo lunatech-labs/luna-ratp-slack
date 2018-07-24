@@ -1,6 +1,6 @@
 package models
 
-import java.time.LocalDateTime
+import java.time.{DayOfWeek, LocalDateTime}
 
 import models.TypeOfAlert.TypeOfAlert
 import play.api.libs.json.Json
@@ -24,6 +24,8 @@ case class UserHomeStation(userId: String, trainType: String, trainCode: String,
 case class Alert(id: Int, userId: String, trainType: String, trainCode: String, station: String, hour: Int, minutes: Int)
 
 case class DayAlert(id: Int, alertId: Int, day: Int)
+
+case class DayAlertForm(alertId: String, day: Int)
 
 object TypeOfAlert extends Enumeration {
   type TypeOfAlert = Value

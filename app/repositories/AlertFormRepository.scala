@@ -1,15 +1,16 @@
 package repositories
 
-import java.time.LocalDate
+import java.time.{DayOfWeek, LocalDate}
 
 import javax.inject.Inject
 import models.TypeOfAlert.TypeOfAlert
-import models.{AlertForm, TypeOfAlert}
+import models.{AlertForm, DayAlertForm, TypeOfAlert}
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
 class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implicit ec: ExecutionContext) {
 
@@ -53,8 +54,58 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
 
   private val alerts = TableQuery[AlertFormTable]
 
+  private class AlertDayForm(tag: Tag) extends Table[DayAlertForm](tag, "ALERTDAYFORM") {
+    def alertId = column[String]("ID", O.PrimaryKey)
+
+    def day = column[Int]("DAY", O.PrimaryKey)
+
+    def * = (alertId, day) <> ((DayAlertForm.apply _).tupled, DayAlertForm.unapply)
+  }
+
+  private val days = TableQuery[AlertDayForm]
+
   def create(alertForm: AlertForm): Future[Int] = db.run {
     alerts += alertForm
+  }
+
+  def delete(id: String): Future[Int] = {
+    db.run(
+      days
+        .filter(_.alertId === id)
+        .delete
+    ).flatMap {count =>
+        db.run(
+          alerts
+            .filter(_.id === id)
+            .delete
+        ).map(x => x + count)
+    }
+  }
+
+  def createOrDeleteDay(id: String, day: DayOfWeek): Future[Int] = {
+    val query = days
+      .filter(_.alertId === id)
+      .filter(_.day === day.getValue)
+
+    val deleteQuery = query.delete
+
+    val addQuery = days += DayAlertForm(id, day.getValue)
+
+    db.run(query.result).flatMap { res =>
+      // Create if it doesn't exist
+      if (res.isEmpty) {
+        db.run(addQuery)
+        // Delete if it exists
+      } else {
+        db.run(deleteQuery)
+      }
+    }
+  }
+
+  def getDaysForAlertForm(id: String): Future[Seq[DayOfWeek]] = {
+    db.run(days
+      .filter(_.alertId === id)
+      .result).map(x => x.map(day => DayOfWeek.of(day.day)))
   }
 
   def updateAlertType(id: String, typeOfAlert: TypeOfAlert): Future[Int] = db.run {

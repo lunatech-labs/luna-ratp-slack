@@ -10,7 +10,6 @@ import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
 
 class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implicit ec: ExecutionContext) {
 
@@ -73,12 +72,12 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
       days
         .filter(_.alertId === id)
         .delete
-    ).flatMap {count =>
-        db.run(
-          alerts
-            .filter(_.id === id)
-            .delete
-        ).map(x => x + count)
+    ).flatMap { count =>
+      db.run(
+        alerts
+          .filter(_.id === id)
+          .delete
+      ).map(x => x + count)
     }
   }
 

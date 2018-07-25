@@ -6,11 +6,11 @@ import java.time.{DayOfWeek, LocalDateTime}
 import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
 import javax.inject.Inject
-import models.{AlertForm, TrafficSubscription, TrainDestination, TypeOfAlert}
+import models.{Payload => _, _}
 import play.api.libs.json.Json
 import play.api.mvc._
 import play.api.{Configuration, Logger}
-import repositories.{AlertFormRepository, TrafficRepository, TrafficSubscriptionRepository}
+import repositories.{AlertFormRepository, AlertRepository, TrafficRepository, TrafficSubscriptionRepository}
 import services._
 import util.IdGenerator
 
@@ -24,7 +24,8 @@ class SlackController @Inject()(
   slackService: SlackService,
   subscriptionRepo: TrafficSubscriptionRepository,
   trafficRepo: TrafficRepository,
-  alertFormRepository: AlertFormRepository)
+  alertFormRepository: AlertFormRepository,
+  alertRepository: AlertRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
   def alert = Action.async { request =>
@@ -150,7 +151,84 @@ class SlackController @Inject()(
     }
   }
 
-  private def validateAlertForm(payload: Payload) = ???
+  private def validateAlertForm(payload: Payload): Future[Result] = {
+    val value = for {
+      action <- payload.actions.flatMap(x => x.headOption)
+      value <- action.value
+    } yield (action.name, value)
+
+    value match {
+      case Some(("validate", id)) =>
+        val alertForm = alertFormRepository.getAlertForm(id)
+        val days = alertFormRepository.getDaysForAlertForm(id)
+
+        days.zip(alertForm)
+          .flatMap { case (d, a) => createAlert(a, d) }
+          .map {
+            _ => Ok("Créer")
+          } recoverWith {
+            case e: Exception => alertForm.map(a =>
+              slackService
+                .getAlertMessage(a, e.getMessage))
+                .flatMap(messageFuture => messageFuture.map(message => Ok(Json.toJson(message))))
+          }
+      case Some(("cancel", id)) =>
+        alertFormRepository.delete(id)
+          .map(_ => Ok("Annulé"))
+      case _ => Future.successful(Ok(Json.toJson(slackService.errorMessage("Action inconnu"))))
+    }
+
+  }
+
+  private def createAlert(alertForm: AlertForm, days: Seq[DayOfWeek]) = {
+    val alert: Option[Alert] = alertForm.typeOfAlert match {
+      case TypeOfAlert.TODAY | TypeOfAlert.REPEAT =>
+        for {
+          hour <- alertForm.hour
+          minute <- alertForm.minutes
+          transportType <- alertForm.transportType
+          transportCode <- alertForm.transportCode
+          transportStation <- alertForm.transportStation
+        } yield {
+          Alert(0,
+            alertForm.userId,
+            transportType,
+            transportCode,
+            transportStation,
+            hour,
+            minute
+          )
+        }
+      case TypeOfAlert.THE =>
+        for {
+          hour <- alertForm.hour
+          minute <- alertForm.minutes
+          transportType <- alertForm.transportType
+          transportCode <- alertForm.transportCode
+          transportStation <- alertForm.transportStation
+          day <- alertForm.day
+          month <- alertForm.month
+          year <- alertForm.year
+        } yield {
+          Alert(0,
+            alertForm.userId,
+            transportType,
+            transportCode,
+            transportStation,
+            hour,
+            minute,
+            Some(day),
+            Some(month),
+            Some(year)
+          )
+        }
+    }
+
+    alert match {
+      case Some(a) => alertRepository.create(a, days: _*)
+      case None => Future.failed(new Exception("Formulaire invalide"))
+    }
+  }
 
   private def unsubscribeToTransport(payload: Payload) = {
     val options = payload.actions.flatMap(x => x.headOption.flatMap(x => x.selected_options))

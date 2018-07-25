@@ -30,7 +30,13 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
 
     def minutes = column[Int]("MINUTES")
 
-    def * = (id, userId, trainType, trainCode, station, hour, minutes) <> ((Alert.apply _).tupled, Alert.unapply)
+    def day = column[Option[Int]]("DAY")
+
+    def month = column[Option[Int]]("MONTH")
+
+    def year = column[Option[Int]]("YEAR")
+
+    def * = (id, userId, trainType, trainCode, station, hour, minutes, day, month, year) <> ((Alert.apply _).tupled, Alert.unapply)
   }
 
   private val alerts = TableQuery[AlertTable]

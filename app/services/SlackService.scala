@@ -40,12 +40,12 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
   }
 
-  def getAlertMessage(alertForm: AlertForm): Future[Message] = {
+  def getAlertMessage(alertForm: AlertForm, errorMessage: String = ""): Future[Message] = {
 
     val timeTypeMenuBase =
       StaticMenu(s"timeType_${alertForm.id}", "Quand ?")
-        .addOption("Aujourd'hui à", TypeOfAlert.IN.toString)
-        .addOption("Le", TypeOfAlert.AT.toString)
+        .addOption("Aujourd'hui à", TypeOfAlert.TODAY.toString)
+        .addOption("Le", TypeOfAlert.THE.toString)
         .addOption("Reccurent", TypeOfAlert.REPEAT.toString)
 
     val timeTypeMenu = getMenuWithSelectedValue(timeTypeMenuBase, alertForm.typeOfAlert.toString)
@@ -69,9 +69,10 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
       messageWithButtonsFuture.map(messageWithButton =>
         messageWithButton
         .addAttachment(alertTimeMenu(alertForm))
-        .addAttachment(AttachmentField(s"validation_${alertForm.id}", "validation")
-          .addAction(Button(s"validate_${alertForm.id}", "Valider").asPrimaryButton)
-          .addAction(Button(s"cancel_${alertForm.id}", "Annuler").asDangerButton.withConfirmation("Êtes-vous sûr ?")))
+          .addAttachment(AttachmentField("error", "error").withText(errorMessage).withColor("danger"))
+          .addAttachment(AttachmentField(s"validation_${alertForm.id}", "validation")
+          .addAction(Button(s"validate", "Valider").withValue(alertForm.id).asPrimaryButton)
+          .addAction(Button(s"cancel", "Annuler").withValue(alertForm.id).asDangerButton.withConfirmation("Êtes-vous sûr ?")))
       )
     }
   }
@@ -80,11 +81,11 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     val attachmentField = AttachmentField("time", "choose_time")
 
     alertForm.typeOfAlert match {
-      case TypeOfAlert.IN =>
+      case TypeOfAlert.TODAY =>
         attachmentField
           .addAction(hourMenu(alertForm))
           .addAction(minutesMenu(alertForm))
-      case TypeOfAlert.AT =>
+      case TypeOfAlert.THE =>
         attachmentField
           .addAction(alertDayMenu(alertForm))
           .addAction(alertMonthMenu(alertForm))

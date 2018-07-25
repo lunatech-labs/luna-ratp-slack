@@ -1,6 +1,6 @@
 package models
 
-import java.time.{DayOfWeek, LocalDateTime}
+import java.time.LocalDateTime
 
 import models.TypeOfAlert.TypeOfAlert
 import play.api.libs.json.Json
@@ -21,7 +21,7 @@ case class TrafficSubscription(userId: String, transport: String, line: String)
 
 case class UserHomeStation(userId: String, trainType: String, trainCode: String, station: String)
 
-case class Alert(id: Int, userId: String, trainType: String, trainCode: String, station: String, hour: Int, minutes: Int)
+case class Alert(id: Int, userId: String, trainType: String, trainCode: String, station: String, hour: Int, minutes: Int, day: Option[Int] = None, month: Option[Int] = None, year: Option[Int] = None)
 
 case class DayAlert(id: Int, alertId: Int, day: Int)
 
@@ -29,8 +29,8 @@ case class DayAlertForm(alertId: String, day: Int)
 
 object TypeOfAlert extends Enumeration {
   type TypeOfAlert = Value
-  val IN = Value("IN")
-  val AT = Value("AT")
+  val TODAY = Value("TODAY")
+  val THE = Value("THE")
   val REPEAT = Value("REPEAT")
 }
 
@@ -42,7 +42,7 @@ case class AlertForm(
   transportCode: Option[String] = None,
   transportStation: Option[String] = None,
   day: Option[Int] = None,
-  month: Option[Int]= None,
+  month: Option[Int] = None,
   year: Option[Int] = None,
   hour: Option[Int] = None,
   minutes: Option[Int] = None
@@ -55,7 +55,7 @@ object AlertForm {
     time: LocalDateTime
   ): AlertForm = new AlertForm(id,
     userId,
-    typeOfAlert = TypeOfAlert.AT,
+    typeOfAlert = TypeOfAlert.THE,
     day = Some(time.getDayOfMonth),
     month = Some(time.getMonthValue),
     year = Some(time.getYear),

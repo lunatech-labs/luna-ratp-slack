@@ -50,12 +50,29 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
   private val dayAlerts = TableQuery[DayAlertTable]
 
 
+  def getAlertForUser(userId: String) = {
+    val alertsFromDb: Future[Seq[Alert]] = db.run(
+      alerts
+        .filter(_.userId === userId)
+        .result
+    )
+
+    alertsFromDb flatMap {list =>
+      Future.sequence(list
+        .map { alert =>
+          val alerts: Future[Seq[DayAlert]] = db.run(dayAlerts.filter(_.alertId === alert.id).result)
+
+          alerts.map(days => (alert, days))
+        }
+      )
+    }
+  }
+
   def create(alert: Alert, days: DayOfWeek*): Future[Int] = {
     val addedAlertId = db.run((alerts returning alerts.map(_.id)) += alert)
     addedAlertId flatMap (x => addDayToAlert(x, days: _*))
     addedAlertId
   }
-
 
   def addDayToAlert(alertId: Int, days: DayOfWeek*): Future[Int] =
     Future.sequence(
@@ -80,7 +97,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
         .result
     )
 
-    alert.zip(days).flatMap{
+    alert.zip(days).flatMap {
       case (Some(a), d) => Future.successful((a, d.map(x => DayOfWeek.of(x.day))))
       case _ => Future.failed(new NoSuchElementException)
     }

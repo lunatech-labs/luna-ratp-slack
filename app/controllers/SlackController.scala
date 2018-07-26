@@ -196,7 +196,10 @@ class SlackController @Inject()(
         val days = alertFormRepository.getDaysForAlertForm(id)
 
         days.zip(alertForm)
-          .flatMap { case (d, a) => createAlert(a, d) }
+          // Create the alert
+          .flatMap { case (d, a) => createAlert(a, d)}
+          // Delete the form
+          .flatMap(_ => alertFormRepository.delete(id))
           .map {
             _ => Ok("Créer")
           } recoverWith {
@@ -262,7 +265,7 @@ class SlackController @Inject()(
 
     alertOption match {
       case Some(AlertAndDate(a, d)) =>
-        alertRepository.create(a, days: _*)
+        alertRepository.create(a, days:_*)
           .map(id => alertService.scheduleAlert(id, d.withSecond(0)))
 
 

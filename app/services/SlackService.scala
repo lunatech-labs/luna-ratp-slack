@@ -5,7 +5,7 @@ import java.time.LocalDate
 import com.lunatech.slack.client.api.SlackClient
 import com.lunatech.slack.client.models._
 import javax.inject.{Inject, Singleton}
-import models.{AlertForm, Status, TrainSchedule}
+import models.{AlertForm, AlertType, Status, TrainSchedule}
 import play.api.{Configuration, Logger}
 import repositories.AlertFormRepository
 
@@ -60,7 +60,6 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
 
     val timeTypeMenuBase =
       StaticMenu(s"alertDay_${alertForm.id}", "Quand ?", options = Some(fields))
-        .addOption("Reccurent", "8")
 
     val timeTypeMenu = getMenuWithSelectedValue(timeTypeMenuBase, alertForm.alertDay.toString)
 
@@ -69,15 +68,17 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     stationFuture.flatMap { station =>
       val message = Message("Ajouter une alerte : ")
         .addAttachment(station)
-        .addAttachment(AttachmentField("Type of alert", "alert_type")
-          .addAction(timeTypeMenu)
-          .withTitle("Quand ?"))
+        .addAttachment(alertTypeMenu(alertForm))
 
       val messageWithButtonsFuture = alertDayButtons(alertForm).map { buttons =>
-        if (alertForm.alertDay == 8) {
-          message.addAttachment(buttons)
+        if (alertForm.alertType == AlertType.REPEAT) {
+          message.addAttachment(buttons.withTitle("Quand ?"))
+
         } else {
           message
+            .addAttachment(AttachmentField("Type of alert", "alert_time")
+            .addAction(timeTypeMenu)
+            .withTitle("Quand ?"))
         }
       }
 
@@ -92,11 +93,23 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
   }
 
-    private def alertTimeMenu(alertForm: AlertForm): AttachmentField = {
-      AttachmentField("time", "choose_time")
-            .addAction(hourMenu(alertForm))
-            .addAction(minutesMenu(alertForm))
-    }
+  private def alertTypeMenu(alertForm: AlertForm): AttachmentField = {
+    val menu = StaticMenu(s"alertType_${alertForm.id}", "Alert type menu")
+      .addOption(AlertType.PONCTUAL.toString, AlertType.PONCTUAL.toString)
+      .addOption(AlertType.REPEAT.toString, AlertType.REPEAT.toString)
+
+    val menuWithValue = getMenuWithSelectedValue(menu, alertForm.alertType.toString)
+
+    AttachmentField("type", "alert_type")
+      .withTitle("Type de l'alerte")
+      .addAction(menuWithValue)
+  }
+
+  private def alertTimeMenu(alertForm: AlertForm): AttachmentField = {
+    AttachmentField("time", "choose_time")
+      .addAction(hourMenu(alertForm))
+      .addAction(minutesMenu(alertForm))
+  }
 
   private def alertDayButtons(alertForm: AlertForm) = {
     val days = Seq(

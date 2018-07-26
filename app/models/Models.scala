@@ -2,6 +2,7 @@ package models
 
 import java.time.LocalDateTime
 
+import models.AlertType.AlertType
 import play.api.libs.json.Json
 
 case class TrainSchedule(code: Option[String], message: String, destination: String)
@@ -30,12 +31,19 @@ case class AlertForm(
   id: String,
   userId: String,
   alertDay: Int,
+  alertType: AlertType,
   transportType: Option[String] = None,
   transportCode: Option[String] = None,
   transportStation: Option[String] = None,
   hour: Option[Int] = None,
   minutes: Option[Int] = None
 )
+
+object AlertType extends Enumeration {
+  type AlertType = Value
+  val PONCTUAL = Value("Ponctuelle")
+  val REPEAT = Value("Répétée")
+}
 
 object AlertForm {
   def getFormForTime(
@@ -45,6 +53,7 @@ object AlertForm {
   ): AlertForm = new AlertForm(id,
     userId,
     alertDay = 0,
+    alertType = AlertType.PONCTUAL,
     hour = Some(time.getHour),
     minutes = Some(time.getMinute))
 }

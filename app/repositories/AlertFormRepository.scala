@@ -1,9 +1,10 @@
 package repositories
 
-import java.time.{DayOfWeek, LocalDate}
+import java.time.DayOfWeek
 
 import javax.inject.Inject
-import models.{AlertForm, DayAlertForm}
+import models.AlertType.AlertType
+import models.{AlertForm, AlertType, DayAlertForm}
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
@@ -17,11 +18,19 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
   import dbConfig._
   import profile.api._
 
+  private implicit val alertTypeMapper = MappedColumnType.base[AlertType, String] (
+    e => e.toString,
+    s => AlertType.withName(s)
+  )
+
+
   private class AlertFormTable(tag: Tag) extends Table[AlertForm](tag, "ALERTFORM") {
 
     def id = column[String]("ID", O.PrimaryKey)
 
     def userId = column[String]("USERID", O.PrimaryKey)
+
+    def alertType = column[AlertType]("ALERTTYPE")
 
     def transportType = column[Option[String]]("TRANSPORTTYPE")
 
@@ -36,7 +45,7 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
     def minutes = column[Option[Int]]("MINUTES")
 
     def * =
-      (id, userId, alertDay, transportType, transportCode, transportStation, hour, minutes) <> ((AlertForm.apply _).tupled, AlertForm.unapply)
+      (id, userId, alertDay, alertType, transportType, transportCode, transportStation, hour, minutes) <> ((AlertForm.apply _).tupled, AlertForm.unapply)
   }
 
   private val alerts = TableQuery[AlertFormTable]
@@ -67,6 +76,10 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
           .delete
       ).map(x => x + count)
     }
+  }
+
+  def updateAlertType(id: String, alertType: AlertType) = db.run {
+    alerts.filter(_.id === id).map(_.alertType).update(alertType)
   }
 
   def createOrDeleteDay(id: String, day: DayOfWeek): Future[Int] = {

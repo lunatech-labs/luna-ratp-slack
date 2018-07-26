@@ -118,7 +118,8 @@ class SlackController @Inject()(
 
         //AlertForm
         case "alert_station" => alertFormChangeType(s)
-        case "alert_type" => alertFormChangeTimeType(s)
+        case "alert_time" => alertFormChangeTime(s)
+        case "alert_type" => alertFormChangeAlertType(s)
         case "day_button" => pushButton(s)
         case "choose_time" => chooseTime(s)
         case "validation" => validateAlertForm(s)
@@ -206,7 +207,7 @@ class SlackController @Inject()(
         }
       case Some(("cancel", id)) =>
         alertFormRepository.delete(id)
-          .map(_ => Ok("Annulé"))
+          .map(_ => Ok(Json.toJson(Message().andDeleteOriginal)))
       case _ => Future.successful(Ok(Json.toJson(slackService.errorMessage("Action inconnu"))))
     }
 
@@ -239,10 +240,11 @@ class SlackController @Inject()(
 
     Logger.info(alert.toString)
 
-    val alertOption: Option[AlertAndDate] = if (alertForm.alertDay < 7) {
+    val alertOption: Option[AlertAndDate] =
+    if (alertForm.alertType == AlertType.PONCTUAL) {
       alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(alertForm.alertDay)))
-      // RECURRENT ALERT
     } else {
+      // RECURRENT ALERT
       val daysUntilFirstSend =
         days
           .map(_.getValue)
@@ -256,7 +258,6 @@ class SlackController @Inject()(
           }.min
 
       alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(daysUntilFirstSend)))
-
     }
 
     alertOption match {
@@ -329,16 +330,22 @@ class SlackController @Inject()(
     } yield (name, value)
   }
 
-  private def alertFormChangeTimeType(payload: Payload) = {
+  private def alertFormChangeAlertType(payload: Payload) = {
     val res = getInteractionValue(payload)
 
-    val idOpt: Future[Option[String]] = res match {
-      case Some((name, value)) if name.startsWith("alertDay_") =>
-        alertFormRepository.updateAlertDay(name.trim.split("_")(1), value.toInt).map(_ => Some(name.trim.split("_")(1)))
+    Logger.info("CHANGE TYPE")
+
+    val idOpt = res match {
+      case Some((name, value)) if name.startsWith("alertType_") =>
+        alertFormRepository.updateAlertType(name.trim.split("_")(1), AlertType.withName(value)).map(_ => Some(name.trim.split("_")(1)))
       case _ =>
         Future.successful(None)
     }
 
+    returnAlertMessage(idOpt)
+  }
+
+  private def returnAlertMessage(idOpt: Future[Option[String]]) = {
     idOpt flatMap {
       case Some(id) =>
         alertFormRepository.getAlertForm(id)
@@ -350,7 +357,19 @@ class SlackController @Inject()(
     } recoverWith {
       case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
+  }
 
+  private def alertFormChangeTime(payload: Payload) = {
+    val res = getInteractionValue(payload)
+
+    val idOpt: Future[Option[String]] = res match {
+      case Some((name, value)) if name.startsWith("alertDay_") =>
+        alertFormRepository.updateAlertDay(name.trim.split("_")(1), value.toInt).map(_ => Some(name.trim.split("_")(1)))
+      case _ =>
+        Future.successful(None)
+    }
+
+    returnAlertMessage(idOpt)
   }
 
   private def alertFormChangeType(payload: Payload) = {
@@ -373,17 +392,7 @@ class SlackController @Inject()(
         Future.successful(None)
     }
 
-    idOpt flatMap {
-      case Some(id) =>
-        alertFormRepository.getAlertForm(id)
-          .flatMap { form =>
-            Logger.info(form.toString)
-            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
-          }
-      case None => Future.successful(Ok)
-    }
-  } recoverWith {
-    case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    returnAlertMessage(idOpt)
   }
 
   private def selectCode(payload: Payload) = {

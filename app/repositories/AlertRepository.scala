@@ -30,13 +30,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
 
     def minutes = column[Int]("MINUTES")
 
-    def day = column[Option[Int]]("DAY")
-
-    def month = column[Option[Int]]("MONTH")
-
-    def year = column[Option[Int]]("YEAR")
-
-    def * = (id, userId, trainType, trainCode, station, hour, minutes, day, month, year) <> ((Alert.apply _).tupled, Alert.unapply)
+    def * = (id, userId, trainType, trainCode, station, hour, minutes) <> ((Alert.apply _).tupled, Alert.unapply)
   }
 
   private val alerts = TableQuery[AlertTable]
@@ -57,8 +51,9 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
 
 
   def create(alert: Alert, days: DayOfWeek*): Future[Int] = {
-    val addedAlert = db.run((alerts returning alerts.map(_.id)) += alert)
-    addedAlert flatMap (x => addDayToAlert(x, days: _*))
+    val addedAlertId = db.run((alerts returning alerts.map(_.id)) += alert)
+    addedAlertId flatMap (x => addDayToAlert(x, days: _*))
+    addedAlertId
   }
 
 
@@ -70,13 +65,25 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
     )
       .map(_.sum)
 
-  def getAlertForDay(day: DayOfWeek): Future[Seq[(Alert, DayAlert)]] = {
-    val query = for {
-      d <- dayAlerts if d.day === day.getValue
-      a <- alerts if d.alertId === a.id
-    } yield (a, d)
+  def getAlert(alertId: Int): Future[(Alert, Seq[DayOfWeek])] = {
+    val alert: Future[Option[Alert]] = db.run(
+      alerts
+        .filter(_.id === alertId)
+        .take(1)
+        .result
+        .headOption
+    )
 
-    db.run(query.result)
+    val days = db.run(
+      dayAlerts
+        .filter(_.alertId === alertId)
+        .result
+    )
+
+    alert.zip(days).flatMap{
+      case (Some(a), d) => Future.successful((a, d.map(x => DayOfWeek.of(x.day))))
+      case _ => Future.failed(new NoSuchElementException)
+    }
   }
 
 }

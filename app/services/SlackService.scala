@@ -1,18 +1,18 @@
 package services
 
-import java.time.{DayOfWeek, LocalDate}
+import java.time.LocalDate
 
 import com.lunatech.slack.client.api.SlackClient
 import com.lunatech.slack.client.models._
 import javax.inject.{Inject, Singleton}
-import models.{AlertForm, Status, TrainSchedule, TypeOfAlert}
+import models.{AlertForm, Status, TrainSchedule}
 import play.api.{Configuration, Logger}
 import repositories.AlertFormRepository
 
 import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
-class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormRepository,  config: Configuration)(implicit ec: ExecutionContext){
+class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormRepository, config: Configuration)(implicit ec: ExecutionContext) {
   val slackClient = SlackClient(config.get[String]("slack.api.token"))
 
 
@@ -41,14 +41,28 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
   }
 
   def getAlertMessage(alertForm: AlertForm, errorMessage: String = ""): Future[Message] = {
+    val days = Map(
+      1 -> "Lundi",
+      2 -> "Mardi",
+      3 -> "Mercredi",
+      4 -> "Jeudi",
+      5 -> "Vendredi",
+      6 -> "Samedi",
+      7 -> "Dimanche"
+    )
+
+    val now = LocalDate.now.getDayOfWeek
+
+    val fields =
+      BasicField("Aujourd'hui", "0") +:
+        BasicField("Demain", "1") +:
+        (2 to 7).map(now.plus(_)).map(x => BasicField(days(x.getValue), x.getValue.toString))
 
     val timeTypeMenuBase =
-      StaticMenu(s"timeType_${alertForm.id}", "Quand ?")
-        .addOption("Aujourd'hui à", TypeOfAlert.TODAY.toString)
-        .addOption("Le", TypeOfAlert.THE.toString)
-        .addOption("Reccurent", TypeOfAlert.REPEAT.toString)
+      StaticMenu(s"alertDay_${alertForm.id}", "Quand ?", options = Some(fields))
+        .addOption("Reccurent", "8")
 
-    val timeTypeMenu = getMenuWithSelectedValue(timeTypeMenuBase, alertForm.typeOfAlert.toString)
+    val timeTypeMenu = getMenuWithSelectedValue(timeTypeMenuBase, alertForm.alertDay.toString)
 
     val stationFuture = alertTransportMenu(alertForm)
 
@@ -59,45 +73,30 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
           .addAction(timeTypeMenu)
           .withTitle("Quand ?"))
 
-      val messageWithButtonsFuture = alertDayButtons(alertForm).map{buttons =>
-        if (alertForm.typeOfAlert == TypeOfAlert.REPEAT) {
-        message.addAttachment(buttons)
-      } else {
-        message
-      }}
+      val messageWithButtonsFuture = alertDayButtons(alertForm).map { buttons =>
+        if (alertForm.alertDay == 8) {
+          message.addAttachment(buttons)
+        } else {
+          message
+        }
+      }
 
       messageWithButtonsFuture.map(messageWithButton =>
         messageWithButton
-        .addAttachment(alertTimeMenu(alertForm))
+          .addAttachment(alertTimeMenu(alertForm))
           .addAttachment(AttachmentField("error", "error").withText(errorMessage).withColor("danger"))
           .addAttachment(AttachmentField(s"validation_${alertForm.id}", "validation")
-          .addAction(Button(s"validate", "Valider").withValue(alertForm.id).asPrimaryButton)
-          .addAction(Button(s"cancel", "Annuler").withValue(alertForm.id).asDangerButton.withConfirmation("Êtes-vous sûr ?")))
+            .addAction(Button(s"validate", "Valider").withValue(alertForm.id).asPrimaryButton)
+            .addAction(Button(s"cancel", "Annuler").withValue(alertForm.id).asDangerButton.withConfirmation("Êtes-vous sûr ?")))
       )
     }
   }
 
-  private def alertTimeMenu(alertForm: AlertForm): AttachmentField = {
-    val attachmentField = AttachmentField("time", "choose_time")
-
-    alertForm.typeOfAlert match {
-      case TypeOfAlert.TODAY =>
-        attachmentField
-          .addAction(hourMenu(alertForm))
-          .addAction(minutesMenu(alertForm))
-      case TypeOfAlert.THE =>
-        attachmentField
-          .addAction(alertDayMenu(alertForm))
-          .addAction(alertMonthMenu(alertForm))
-          .addAction(alertYearMenu(alertForm))
-          .addAction(hourMenu(alertForm))
-          .addAction(minutesMenu(alertForm))
-      case TypeOfAlert.REPEAT =>
-        attachmentField
-          .addAction(hourMenu(alertForm))
-          .addAction(minutesMenu(alertForm))
+    private def alertTimeMenu(alertForm: AlertForm): AttachmentField = {
+      AttachmentField("time", "choose_time")
+            .addAction(hourMenu(alertForm))
+            .addAction(minutesMenu(alertForm))
     }
-  }
 
   private def alertDayButtons(alertForm: AlertForm) = {
     val days = Seq(
@@ -105,7 +104,9 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
       2 -> "Mardi",
       3 -> "Mercredi",
       4 -> "Jeudi",
-      5 -> "Vendredi"
+      5 -> "Vendredi",
+      6 -> "Samedi",
+      7 -> "Dimanche"
     )
 
     val daysForAlert = alertFormRepo.getDaysForAlertForm(alertForm.id)
@@ -123,54 +124,6 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
 
     futureFields.map(fields => AttachmentField("Select a day", "day_button", actions = Some(fields)))
-  }
-
-  private def alertDayMenu(alertForm: AlertForm): StaticMenu = {
-    val monthLength: Int = (
-      for {
-        day <- alertForm.day
-        month <- alertForm.month
-        year <- alertForm.year
-      } yield LocalDate.of(year, month, day).lengthOfMonth()
-      ).getOrElse(30)
-
-    val fields = for (i <- 1 until monthLength + 1) yield BasicField(f"$i%02d", i.toString)
-
-    val menu = StaticMenu(s"day_${alertForm.id}", "Jour", options = Some(fields))
-
-    getMenuWithSelectedValue(menu, alertForm.day.getOrElse(0).toString)
-  }
-
-  private def alertMonthMenu(alertForm: AlertForm): StaticMenu = {
-    val months: Seq[(Int, String)] = Seq(
-      1 -> "Janvier",
-      2 -> "Février",
-      3 -> "Mars",
-      4 -> "Avril",
-      5 -> "Mai",
-      6 -> "Juin",
-      7 -> "Juillet",
-      8 -> "Août",
-      9 -> "Septembre",
-      10 -> "Octobre",
-      11 -> "Novembre",
-      12 -> "Décembre"
-    )
-
-    val monthsFields = months.map(x => BasicField(x._2, x._1.toString))
-
-    val monthMenu = StaticMenu(s"month_${alertForm.id}", "Mois", options = Some(monthsFields))
-
-    getMenuWithSelectedValue(monthMenu, alertForm.month.getOrElse(0).toString)
-  }
-
-  private def alertYearMenu(alertForm: AlertForm) = {
-    val currentYear = LocalDate.now.getYear
-    val menu = StaticMenu(s"year_${alertForm.id}", "Année")
-      .addOption(currentYear.toString, currentYear.toString)
-      .addOption((currentYear + 1).toString, (currentYear + 1).toString)
-
-    getMenuWithSelectedValue(menu, alertForm.year.getOrElse(0).toString)
   }
 
   private def alertTransportMenu(alertForm: AlertForm): Future[AttachmentField] = {

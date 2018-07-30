@@ -1,18 +1,20 @@
 package services
 
-import java.time.LocalDate
+import java.time.format.TextStyle
+import java.time.{DayOfWeek, LocalDate}
+import java.util.Locale
 
 import com.lunatech.slack.client.api.SlackClient
 import com.lunatech.slack.client.models._
 import javax.inject.{Inject, Singleton}
-import models.{AlertForm, AlertType, Status, TrainSchedule}
+import models._
 import play.api.{Configuration, Logger}
-import repositories.AlertFormRepository
+import repositories.{AlertFormRepository, AlertRepository}
 
 import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
-class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormRepository, config: Configuration)(implicit ec: ExecutionContext) {
+class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormRepository, alertRepo: AlertRepository, config: Configuration)(implicit ec: ExecutionContext) {
   val slackClient = SlackClient(config.get[String]("slack.api.token"))
 
 
@@ -77,8 +79,8 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
         } else {
           message
             .addAttachment(AttachmentField("Type of alert", "alert_time")
-            .addAction(timeTypeMenu)
-            .withTitle("Quand ?"))
+              .addAction(timeTypeMenu)
+              .withTitle("Quand ?"))
         }
       }
 
@@ -163,6 +165,28 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
 
   }
+
+  def disableAlertMessage(userId: String): Future[Message] = {
+    val alertsFuture = alertRepo.getAlertForUser(userId)
+
+    alertsFuture
+      .map(alerts => alerts.map(a => getAttachmnentForAlertWithDays(a)))
+      .map{
+        case attachments if attachments.nonEmpty => Message(attachments = Some(attachments))
+        case _ => Message("Vous n'avez aucune alerte")
+      }
+  }
+
+  private def getAttachmnentForAlertWithDays(alert: AlertWithDays) = {
+    AttachmentField("Delete alert", "delete_alert")
+      .withTitle(s"${ratp.nameOfType(alert.alert.trainType)} ${alert.alert.trainCode} ${alert.alert.station} à ${alert.alert.hour}:${alert.alert.minutes}")
+      .withText(alert.days
+        .map(days => days.map(x => DayOfWeek.of(x.day).getDisplayName(TextStyle.FULL, Locale.FRANCE).capitalize))
+        .map(x => x.mkString(" - ")).getOrElse("")
+      )
+      .addAction(Button(s"delete", "Supprimer").withValue(alert.alert.id.toString).asDangerButton.withConfirmation("Voulez vous vraiment supprimer cette alerte ?"))
+  }
+
 
   private def getAlertCode(alertForm: AlertForm) = {
     val menu: Future[StaticMenu] = alertForm.transportType match {

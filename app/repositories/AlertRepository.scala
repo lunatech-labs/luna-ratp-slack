@@ -3,7 +3,7 @@ package repositories
 import java.time.DayOfWeek
 
 import javax.inject.Inject
-import models.{Alert, DayAlert}
+import models.{Alert, AlertWithDays, DayAlert}
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
 
@@ -40,7 +40,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
 
     def alertId = column[Int]("ALERTID")
 
-    def day = column[Int]("day")
+    def day = column[Int]("DAY")
 
     val alert = foreignKey("ALERT_FK", alertId, alerts)(_.id, onDelete = ForeignKeyAction.Cascade)
 
@@ -50,7 +50,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
   private val dayAlerts = TableQuery[DayAlertTable]
 
 
-  def getAlertForUser(userId: String) = {
+  def getAlertForUser(userId: String): Future[Seq[AlertWithDays]] = {
     val alertsFromDb: Future[Seq[Alert]] = db.run(
       alerts
         .filter(_.userId === userId)
@@ -62,7 +62,13 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
         .map { alert =>
           val alerts: Future[Seq[DayAlert]] = db.run(dayAlerts.filter(_.alertId === alert.id).result)
 
-          alerts.map(days => (alert, days))
+          alerts.map(days =>
+            if(days.nonEmpty) {
+              AlertWithDays(alert, Some(days))
+            } else {
+              AlertWithDays(alert, None)
+            }
+          )
         }
       )
     }
@@ -72,6 +78,10 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
     val addedAlertId = db.run((alerts returning alerts.map(_.id)) += alert)
     addedAlertId flatMap (x => addDayToAlert(x, days: _*))
     addedAlertId
+  }
+
+  def delete(alertId: Int): Future[Int] = db.run {
+    alerts.filter(_.id === alertId).delete
   }
 
   def addDayToAlert(alertId: Int, days: DayOfWeek*): Future[Int] =

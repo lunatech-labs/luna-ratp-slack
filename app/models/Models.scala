@@ -27,6 +27,8 @@ case class DayAlert(id: Int, alertId: Int, day: Int)
 
 case class DayAlertForm(alertId: String, day: Int)
 
+case class AlertWithDays(alert: Alert, days: Option[Seq[DayAlert]])
+
 case class AlertForm(
   id: String,
   userId: String,

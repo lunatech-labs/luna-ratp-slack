@@ -27,7 +27,7 @@ class HomeController @Inject()(cc: ControllerComponents, trafficRepo: TrafficRep
     //      Ok(Json.toJson(res))
     //    }
 
-    alertRepo.getAlert(1).map(x => Logger.info(x.toString)).map(_ => Ok)
+    alertRepo.getAlertForUser("UB5RJ1SAW").map(x => Logger.info(x.toString)).map(_ => Ok)
 
   }
 }

@@ -11,6 +11,7 @@ POST        /interactive         controllers.SlackController.interactive
 POST        /suggestions         controllers.SlackController.suggestions
 POST        /dialogFlow          controllers.DialogFlowController.dialogFlow
 POST        /alert               controllers.SlackController.alert
+POST        /disableAlert        controllers.SlackController.disableAlert
 
 GET         /testDate            controllers.HomeController.date
 

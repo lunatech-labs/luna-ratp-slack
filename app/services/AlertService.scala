@@ -57,6 +57,9 @@ class AlertService @Inject() (actorSystem: ActorSystem, alertRepository: AlertRe
               .min
 
             scheduleAlert(id, currentDate.plusDays(nextDay))
+          } else {
+            // This is a ponctual alert so it needs to be deleted
+            alertRepository.delete(id)
           }
       }
   }

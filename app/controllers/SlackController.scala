@@ -29,6 +29,13 @@ class SlackController @Inject()(
   alertRepository: AlertRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
+  def disableAlert = Action.async {request =>
+    val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
+    //TODO safe get
+    slackService.disableAlertMessage(payload.get.user_id).map(message =>
+      Ok(Json.toJson(message)))
+  }
+
   def alert = Action.async { request =>
     val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
 
@@ -123,12 +130,25 @@ class SlackController @Inject()(
         case "day_button" => pushButton(s)
         case "choose_time" => chooseTime(s)
         case "validation" => validateAlertForm(s)
+        case "delete_alert" => deleteAlert(s)
 
         // Not implemented
         //case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
         case _ => Future.successful(Ok)
       }
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
+    }
+  }
+
+  private def deleteAlert(payload: Payload) = {
+    val alertId = for {
+      action <- payload.actions.flatMap(_.headOption)
+      value <- action.value
+    } yield value
+
+    alertId match {
+      case Some(id) => alertRepository.delete(id.toInt).map(_ => Ok("Alerte supprimée"))
+      case None => Future.successful(Ok(Json.toJson(slackService.errorMessage("Cette aletre n'existe pas"))))
     }
   }
 
@@ -282,7 +302,7 @@ class SlackController @Inject()(
 
         opt.head.value.split("_") match {
           case Array(transport, line) =>
-            subscriptionRepo.delete(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous vous êtes désabonné à la ligne $line"))
+            subscriptionRepo.delete(TrafficSubscription(user, transport, line)).map(_ => Ok(s"Vous vous êtes désabonné de la ligne $line"))
           case _ => Future.failed(new Exception("Il faut appeler la commande /unsubscribe"))
         }
     }) recoverWith {

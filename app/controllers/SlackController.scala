@@ -31,9 +31,12 @@ class SlackController @Inject()(
 
   def disableAlert = Action.async { request =>
     val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
-    //TODO safe get
-    slackService.disableAlertMessage(payload.get.user_id).map(message =>
-      Ok(Json.toJson(message)))
+
+    payload match {
+      case Success(p) => slackService.disableAlertMessage(p.user_id).map(message =>
+        Ok(Json.toJson(message)))
+      case _ => Future.successful(BadRequest)
+    }
   }
 
   def alert = Action.async { request =>

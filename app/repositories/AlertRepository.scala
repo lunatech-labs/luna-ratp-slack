@@ -57,13 +57,13 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
         .result
     )
 
-    alertsFromDb flatMap {list =>
+    alertsFromDb flatMap { list =>
       Future.sequence(list
         .map { alert =>
           val alerts: Future[Seq[DayAlert]] = db.run(dayAlerts.filter(_.alertId === alert.id).result)
 
           alerts.map(days =>
-            if(days.nonEmpty) {
+            if (days.nonEmpty) {
               AlertWithDays(alert, Some(days))
             } else {
               AlertWithDays(alert, None)

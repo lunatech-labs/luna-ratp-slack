@@ -171,7 +171,7 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
 
     alertsFuture
       .map(alerts => alerts.map(a => getAttachmnentForAlertWithDays(a)))
-      .map{
+      .map {
         case attachments if attachments.nonEmpty => Message(attachments = Some(attachments))
         case _ => Message("Vous n'avez aucune alerte")
       }

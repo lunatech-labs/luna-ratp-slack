@@ -48,7 +48,9 @@ case class DialogFlowModel(
   session: String
 ) {
   def getParameters: Map[String, String] = queryResult.parameters
+
   def isAllParameterPresent: Boolean = queryResult.allRequiredParamsPresent
+
   def getIntent: String = queryResult.intent.displayName
 }
 

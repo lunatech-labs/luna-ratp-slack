@@ -18,7 +18,7 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
   import dbConfig._
   import profile.api._
 
-  private implicit val alertTypeMapper = MappedColumnType.base[AlertType, String] (
+  private implicit val alertTypeMapper = MappedColumnType.base[AlertType, String](
     e => e.toString,
     s => AlertType.withName(s)
   )

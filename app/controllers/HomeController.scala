@@ -2,7 +2,6 @@ package controllers
 
 
 import javax.inject.Inject
-import models.AlertForm
 import play.api.Logger
 import play.api.mvc.{AbstractController, ControllerComponents}
 import repositories.{AlertRepository, TrafficRepository, TrafficSubscriptionRepository}

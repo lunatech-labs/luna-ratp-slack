@@ -1,10 +1,10 @@
 package services
 
-import java.time.{DayOfWeek, LocalDate, LocalDateTime}
+import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit._
 
 import akka.actor.{ActorSystem, Cancellable}
-import com.lunatech.slack.client.models.{ChatEphemeral, ChatMessage}
+import com.lunatech.slack.client.models.ChatEphemeral
 import javax.inject.Inject
 import models.TrainDestination
 import play.api.Logger

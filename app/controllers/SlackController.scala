@@ -29,7 +29,7 @@ class SlackController @Inject()(
   alertRepository: AlertRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
-  def disableAlert = Action.async {request =>
+  def disableAlert = Action.async { request =>
     val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
     //TODO safe get
     slackService.disableAlertMessage(payload.get.user_id).map(message =>
@@ -217,7 +217,7 @@ class SlackController @Inject()(
 
         days.zip(alertForm)
           // Create the alert
-          .flatMap { case (d, a) => createAlert(a, d)}
+          .flatMap { case (d, a) => createAlert(a, d) }
           // Delete the form
           .flatMap(_ => alertFormRepository.delete(id))
           .map {
@@ -264,28 +264,28 @@ class SlackController @Inject()(
     Logger.info(alert.toString)
 
     val alertOption: Option[AlertAndDate] =
-    if (alertForm.alertType == AlertType.PONCTUAL) {
-      alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(alertForm.alertDay)))
-    } else {
-      // RECURRENT ALERT
-      val daysUntilFirstSend =
-        days
-          .map(_.getValue)
-          .filter(_ != now.getDayOfWeek.getValue)
-          .map { value =>
-            if (value > now.getDayOfWeek.getValue) {
-              value - now.getDayOfWeek.getValue
-            } else {
-              value + 7 - now.getDayOfWeek.getValue
-            }
-          }.min
+      if (alertForm.alertType == AlertType.PONCTUAL) {
+        alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(alertForm.alertDay)))
+      } else {
+        // RECURRENT ALERT
+        val daysUntilFirstSend =
+          days
+            .map(_.getValue)
+            .filter(_ != now.getDayOfWeek.getValue)
+            .map { value =>
+              if (value > now.getDayOfWeek.getValue) {
+                value - now.getDayOfWeek.getValue
+              } else {
+                value + 7 - now.getDayOfWeek.getValue
+              }
+            }.min
 
-      alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(daysUntilFirstSend)))
-    }
+        alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(daysUntilFirstSend)))
+      }
 
     alertOption match {
       case Some(AlertAndDate(a, d)) =>
-        alertRepository.create(a, days:_*)
+        alertRepository.create(a, days: _*)
           .map(id => alertService.scheduleAlert(id, d.withSecond(0)))
 
 

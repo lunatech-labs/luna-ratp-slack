@@ -7,7 +7,7 @@ import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
 import javax.inject.Inject
 import models.{Payload => _, _}
-import play.api.libs.json.Json
+import play.api.libs.json.{Json, JsResult, JsSuccess}
 import play.api.mvc._
 import play.api.{Configuration, Logger}
 import repositories.{AlertFormRepository, AlertRepository, TrafficRepository, TrafficSubscriptionRepository}
@@ -26,8 +26,28 @@ class SlackController @Inject()(
   subscriptionRepo: TrafficSubscriptionRepository,
   trafficRepo: TrafficRepository,
   alertFormRepository: AlertFormRepository,
-  alertRepository: AlertRepository)
+  alertRepository: AlertRepository,
+  dialogFlowService: DialogFlowService)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
+
+
+  def events = Action {request=>
+    val jsonOpt = request.body.asJson
+
+    val slackEventOpt: Option[JsResult[SlackEvent]] = jsonOpt.map(json => Json.fromJson[SlackEvent](json))
+
+    slackEventOpt match {
+      case Some(JsSuccess(s, _)) =>
+        if (s.`type` == EventType.MESSAGE){
+          dialogFlowService.forwardBody(jsonOpt)
+        } else {
+          //TODO Sending welcome message
+        }
+      case _ =>
+    }
+
+    Ok
+  }
 
   def disableAlert = Action.async { request =>
     val payload = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))

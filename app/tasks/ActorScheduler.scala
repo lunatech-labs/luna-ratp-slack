@@ -1,6 +1,6 @@
 package tasks
 
-import actor.TrafficActor
+import actors.TrafficActor
 import akka.actor.{ActorRef, ActorSystem}
 import javax.inject.{Inject, Named}
 import play.api.inject.{SimpleModule, _}

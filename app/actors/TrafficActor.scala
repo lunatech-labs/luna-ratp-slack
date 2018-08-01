@@ -1,4 +1,4 @@
-package actor
+package actors
 
 import akka.actor.{Actor, Props}
 import com.lunatech.slack.client.models.ChatEphemeral
@@ -12,7 +12,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class TrafficActor @Inject()(ratp: RATPService, repository: TrafficRepository, slackService: SlackService, subscription: TrafficSubscriptionRepository)(implicit ec: ExecutionContext) extends Actor {
 
-  import actor.TrafficActor._
+  import actors.TrafficActor._
 
   override def receive: Receive = {
     case _: RER =>

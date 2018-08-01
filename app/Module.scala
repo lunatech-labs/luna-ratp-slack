@@ -1,4 +1,4 @@
-import actor.TrafficActor
+import actors.TrafficActor
 import com.google.inject.AbstractModule
 import play.api.libs.concurrent.AkkaGuiceSupport
 

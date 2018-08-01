@@ -19,7 +19,7 @@ case class Traffic(transport: String, line: String, slug: String, title: String,
 
 case class TrafficSubscription(userId: String, transport: String, line: String)
 
-case class UserHomeStation(userId: String, trainType: String, trainCode: String, station: String)
+case class UserHomeStation(id: Int, userId: String, trainType: String, trainCode: String, station: String)
 
 case class Alert(id: Int, userId: String, trainType: String, trainCode: String, station: String, hour: Int, minutes: Int)
 

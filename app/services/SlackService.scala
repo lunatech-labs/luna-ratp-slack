@@ -309,7 +309,12 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
   }
 
-  private def getStationsMenu(transport: String, code: String): Future[StaticMenu] = {
+  def getSelectTranspotMenu: StaticMenu =
+    StaticMenu(name = "Moyen de transport", "Moyen de transport")
+      .addOption(text = "RER", value = "rers")
+      .addOption(text = "Métro", value = "metros")
+
+  def getStationsMenu(transport: String, code: String): Future[StaticMenu] = {
     ratp.getStations(transport, code) flatMap {
       case TrainResultSuccess(stations) =>
         val fields = stations.map(s => BasicField(s.name, s"${transport}_${code}_${s.name}"))
@@ -318,7 +323,7 @@ class SlackService @Inject()(ratp: RATPService, alertFormRepo: AlertFormReposito
     }
   }
 
-  private def getCodeMenu(transport: String): Future[StaticMenu] = {
+  def getCodeMenu(transport: String): Future[StaticMenu] = {
     ratp.getCodes(transport) flatMap {
       case TrainResultSuccess(codes) => {
         val fields = codes.map(code => BasicField(code.name, s"${transport}_${code.code}"))

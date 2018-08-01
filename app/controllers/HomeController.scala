@@ -4,12 +4,12 @@ package controllers
 import javax.inject.Inject
 import play.api.Logger
 import play.api.mvc.{AbstractController, ControllerComponents}
-import repositories.{AlertRepository, TrafficRepository, TrafficSubscriptionRepository}
+import repositories.{AlertRepository, TrafficRepository, TrafficSubscriptionRepository, UserHomeRepository}
 import services.SlackService
 
 import scala.concurrent.ExecutionContext
 
-class HomeController @Inject()(cc: ControllerComponents, trafficRepo: TrafficRepository, repository: TrafficSubscriptionRepository, slackService: SlackService, alertRepo: AlertRepository)
+class HomeController @Inject()(cc: ControllerComponents, trafficRepo: TrafficRepository, repository: TrafficSubscriptionRepository, slackService: SlackService, alertRepo: AlertRepository, userHomeRepository: UserHomeRepository)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
   def index = Action.async {
@@ -26,7 +26,6 @@ class HomeController @Inject()(cc: ControllerComponents, trafficRepo: TrafficRep
     //      Ok(Json.toJson(res))
     //    }
 
-    alertRepo.getAlertForUser("UB5RJ1SAW").map(x => Logger.info(x.toString)).map(_ => Ok)
-
+    userHomeRepository.selectStationFromUser("UB5RJ1SAW").map(x => Ok(x.toString))
   }
 }

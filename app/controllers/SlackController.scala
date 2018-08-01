@@ -7,14 +7,14 @@ import com.lunatech.slack.client.Parser
 import com.lunatech.slack.client.models._
 import javax.inject.Inject
 import models.{Payload => _, _}
-import play.api.libs.json.{Json, JsResult, JsSuccess}
+import play.api.libs.json.{JsResult, JsSuccess, Json}
 import play.api.mvc._
 import play.api.{Configuration, Logger}
-import repositories.{AlertFormRepository, AlertRepository, TrafficRepository, TrafficSubscriptionRepository}
+import repositories._
 import services._
 import util.IdGenerator
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent._
 import scala.util.{Failure, Success}
 
 class SlackController @Inject()(
@@ -27,23 +27,45 @@ class SlackController @Inject()(
   trafficRepo: TrafficRepository,
   alertFormRepository: AlertFormRepository,
   alertRepository: AlertRepository,
-  dialogFlowService: DialogFlowService)
+  dialogFlowService: DialogFlowService,
+  userHomeRepository: UserHomeRepository
+)
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
 
-  def events = Action {request=>
+  def events = Action { request =>
     val jsonOpt = request.body.asJson
 
     val slackEventOpt: Option[JsResult[SlackEvent]] = jsonOpt.map(json => Json.fromJson[SlackEvent](json))
 
     slackEventOpt match {
       case Some(JsSuccess(s, _)) =>
-        if (s.`type` == EventType.MESSAGE){
+        if (s.`type` == EventType.MESSAGE) {
           dialogFlowService.forwardBody(jsonOpt)
         } else {
-          //TODO Sending welcome message
+          val userInfo = slackService.slackClient.userInfo(s.user)
+
+          userInfo.map { user =>
+            Logger.info(user.toString)
+            val name = user.profile.flatMap(x => x.real_name).getOrElse("")
+
+            val sendMessage = (text: String) => slackService.slackClient.postEphemeral(ChatEphemeral(channel = user.id, user = user.id, text = text))
+
+            sendMessage(s"Bonjour <@${user.id}>, bienvenue chez *Lunatech* ! Je suis *RATP BOT*")
+              .flatMap(_ => sendMessage("Laisse moi te poser quelques questions afin de t'aider dans tes trajets de tous les jours"))
+              .flatMap { _ =>
+                val message =
+                  ChatEphemeral(channel = user.id, user = user.id, text = "Empruntes-tu le RER ou le Métro pour venir ?")
+                    .addAttachment(
+                      AttachmentField("Welcome message", "more_information")
+                        .addAction(Button("yes", "Oui").asPrimaryButton)
+                        .addAction(Button("no", "Non").asDangerButton)
+                    )
+                slackService.slackClient.postEphemeral(message)
+              }
+          }
         }
-      case _ =>
+      case _ => Logger.debug(s"[Event: Unhandled event] - $jsonOpt ")
     }
 
     Ok
@@ -146,7 +168,7 @@ class SlackController @Inject()(
         // Unsubscription
         case "select_unsub" => unsubscribeToTransport(s)
 
-        //AlertForm
+        // AlertForm
         case "alert_station" => alertFormChangeType(s)
         case "alert_time" => alertFormChangeTime(s)
         case "alert_type" => alertFormChangeAlertType(s)
@@ -155,12 +177,121 @@ class SlackController @Inject()(
         case "validation" => validateAlertForm(s)
         case "delete_alert" => deleteAlert(s)
 
+        // Welcome messages
+        case "more_information" => moreInformation(s)
+        case "welcome_transport" => welcomeTransport(s)
+        case "welcome_code" => welcomeCode(s)
+        case "welcome_station" => welcomeStation(s)
+
         // Not implemented
         //case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
         case _ => Future.successful(Ok)
       }
       case Failure(e) => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
+  }
+
+  // TODO Save user's home
+  private def welcomeStation(payload: Payload): Future[Result] = {
+    val message = (for {
+      action <- payload.actions.flatMap(_.headOption)
+      options <- action.selected_options.flatMap(_.headOption)
+      value <- Some(options.value)
+    } yield {
+      value.split("_") match {
+        case Array(transport, code, station) =>
+          Some(userHomeRepository.insertOrUpdate(UserHomeStation(0, payload.user.id, transport, code, station)).map {_ =>
+            Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
+              .addAttachment(AttachmentField("", "").withText(s"*${ratp.nameOfType(transport)} $code $station*"))
+          })
+        case _ => None
+      }
+    }).flatten
+
+    message.map(_.map(x => Ok(Json.toJson(x)))).getOrElse(Future.successful(Ok("")))
+  }
+
+  private def welcomeCode(payload: Payload): Future[Result] = {
+    val message = (for {
+      action <- payload.actions.flatMap(_.headOption)
+      options <- action.selected_options.flatMap(_.headOption)
+      value <- Some(options.value)
+    } yield {
+      Logger.info(value)
+
+      value.split("_") match {
+        case Array(transport, code) =>
+          val transportMenu = slackService.getSelectTranspotMenu.copy(selected_options = Some(Seq(BasicField(ratp.nameOfType(transport), transport))))
+          val codeMenu = slackService.getCodeMenu(transport).map(menu => menu.copy(selected_options = Some(Seq(BasicField(s"${ratp.nameOfType(transport)} $code", code)))))
+          val stationMenu = slackService.getStationsMenu(transport, code)
+
+          Some(codeMenu.zip(stationMenu) map { case (c, s) =>
+            Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
+              .addAttachment(
+                AttachmentField("Moyen de transport", "welcome_station")
+                  .addAction(transportMenu)
+                  .addAction(c)
+                  .addAction(s)
+              )
+          })
+
+        case _ => None
+      }
+    }).flatten
+
+    Logger.info(message.toString)
+
+    message.map(_.map(x => Ok(Json.toJson(x)))).getOrElse(Future.successful(Ok("")))
+  }
+
+  private def welcomeTransport(payload: Payload) = {
+
+    val message = for {
+      action <- payload.actions.flatMap(_.headOption)
+      options <- action.selected_options.flatMap(_.headOption)
+      value <- Some(options.value)
+    } yield {
+      Logger.info(value)
+      slackService.getCodeMenu(value) map { menu =>
+        Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
+          .addAttachment(
+            AttachmentField("Moyen de transport", "welcome_code")
+              .addAction(slackService.getSelectTranspotMenu.copy(selected_options = Some(Seq(BasicField(ratp.nameOfType(value), value)))))
+              .addAction(menu)
+          )
+      }
+    }
+
+    Logger.info(message.toString)
+
+    message.map(_.map(x => Ok(Json.toJson(x)))).getOrElse(Future.successful(Ok("")))
+  }
+
+  private def moreInformation(payload: Payload) = {
+    val chatEphemeral = (x: String) => ChatEphemeral(channel = payload.user.id, user = payload.user.id, text = x)
+    val sendMessage = (x: String) => slackService.slackClient.postEphemeral(chatEphemeral(x))
+    val value = for {
+      action <- payload.actions.flatMap(x => x.headOption)
+    } yield action.name
+
+    val message =
+      if (value.contains("yes")) {
+        slackService.slackClient.postEphemeral {
+          chatEphemeral("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
+            .addAttachment {
+              AttachmentField("welcome station", "welcome_transport")
+                .addAction(slackService.getSelectTranspotMenu)
+            }
+        }.map(_ => Message("Empruntes-tu le RER ou le Métro pour venir ?").addAttachment(AttachmentField("", "").withText("*Oui*")))
+      } else if (value.contains("no")) {
+        sendMessage("D'accord, je ne vais pas être très utile dans ce cas, n'hésite tout de même pas à revenir me voir !")
+          .map(_ => Message("Empruntes-tu le RER ou le Métro pour venir ?").addAttachment(AttachmentField("", "").withText("*Non*")))
+
+      } else {
+        Future.successful(Message("Une erreur s'est produite, revenez plus tard."))
+      }
+
+    message.map(x => Ok(Json.toJson(x)))
   }
 
   private def deleteAlert(payload: Payload) = {
@@ -196,9 +327,10 @@ class SlackController @Inject()(
     idOpt flatMap {
       case Some(id) =>
         alertFormRepository.getAlertForm(id)
-          .flatMap { form =>
-            Logger.info(form.toString)
-            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+          .flatMap {
+            form =>
+              Logger.info(form.toString)
+              slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
           }
       case None => Future.successful(Ok)
     }
@@ -216,12 +348,14 @@ class SlackController @Inject()(
 
     values match {
       case Some((id, value)) =>
-        alertFormRepository.createOrDeleteDay(id, DayOfWeek.of(value.toInt)).flatMap { _ =>
-          alertFormRepository.getAlertForm(id)
-            .flatMap { form =>
-              Logger.info(form.toString)
-              slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
-            }
+        alertFormRepository.createOrDeleteDay(id, DayOfWeek.of(value.toInt)).flatMap {
+          _ =>
+            alertFormRepository.getAlertForm(id)
+              .flatMap {
+                form =>
+                  Logger.info(form.toString)
+                  slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+              }
         }
       case _ => Future.successful(Ok(Json.toJson(Message("Une erreur s'est produite"))))
     }
@@ -240,7 +374,9 @@ class SlackController @Inject()(
 
         days.zip(alertForm)
           // Create the alert
-          .flatMap { case (d, a) => createAlert(a, d) }
+          .flatMap {
+          case (d, a) => createAlert(a, d)
+        }
           // Delete the form
           .flatMap(_ => alertFormRepository.delete(id))
           .map {
@@ -295,12 +431,13 @@ class SlackController @Inject()(
           days
             .map(_.getValue)
             .filter(_ != now.getDayOfWeek.getValue)
-            .map { value =>
-              if (value > now.getDayOfWeek.getValue) {
-                value - now.getDayOfWeek.getValue
-              } else {
-                value + 7 - now.getDayOfWeek.getValue
-              }
+            .map {
+              value =>
+                if (value > now.getDayOfWeek.getValue) {
+                  value - now.getDayOfWeek.getValue
+                } else {
+                  value + 7 - now.getDayOfWeek.getValue
+                }
             }.min
 
         alert.map(a => AlertAndDate(a, now.withMinute(a.minutes).withHour(a.hour).plusDays(daysUntilFirstSend)))
@@ -395,9 +532,10 @@ class SlackController @Inject()(
     idOpt flatMap {
       case Some(id) =>
         alertFormRepository.getAlertForm(id)
-          .flatMap { form =>
-            Logger.info(form.toString)
-            slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
+          .flatMap {
+            form =>
+              Logger.info(form.toString)
+              slackService.getAlertMessage(form) map (message => Ok(Json.toJson(message)))
           }
       case None => Future.successful(Ok)
     } recoverWith {

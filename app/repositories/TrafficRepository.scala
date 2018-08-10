@@ -4,18 +4,19 @@ import javax.inject.{Inject, Singleton}
 import models.{Status, Traffic}
 import play.Logger
 import play.api.db.slick.DatabaseConfigProvider
+import repositories.Schema._
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
-class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implicit ec: ExecutionContext) {
+class TrafficRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implicit ec: ExecutionContext){
   private val dbConfig = dbConfigProvider.get[JdbcProfile]
 
   import dbConfig._
   import profile.api._
 
-  private class TrafficTable(tag: Tag) extends Table[Traffic](tag, "TRAFFIC") {
+  private class TrafficTable(tag: Tag)(implicit s: Schema) extends Table[Traffic](tag,s,"traffic") {
     def line = column[String]("LINE", O.PrimaryKey)
 
     def transport = column[String]("TRANSPORT")

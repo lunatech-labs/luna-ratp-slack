@@ -13,11 +13,15 @@ scalaVersion := "2.12.2"
 libraryDependencies ++= Seq(
   ehcache,
   ws,
+  jdbc,
   "com.lunatech" % "scala-slack-client" % "0.2.3",
-  "com.typesafe.play" %% "play-slick" % "3.0.1",
-  "com.typesafe.play" %% "play-slick-evolutions" % "3.0.1",
-  "com.h2database" % "h2" % "1.4.197",
-  evolutions,
+  "org.postgresql" % "postgresql" % "9.4.1209",
+  "com.h2database" % "h2" % "1.4.+",
+  "org.flywaydb" %% "flyway-play" % "4.0.+",
+  "com.typesafe.play" %% "play-slick" % "3.0.3",
+  "com.github.tminglei" %% "slick-pg" % "0.16.3",
+  "com.github.tminglei" %% "slick-pg_play-json" % "0.16.3",
+  "javax.xml.bind" % "jaxb-api" % "2.1",
   specs2 % Test,
   guice)
 

@@ -12,7 +12,7 @@ import play.api.mvc._
 import play.api.{Configuration, Logger}
 import repositories._
 import services._
-import util.IdGenerator
+import utils.IdGenerator
 
 import scala.concurrent._
 import scala.util.{Failure, Success}

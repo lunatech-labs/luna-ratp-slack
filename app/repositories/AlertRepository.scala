@@ -8,6 +8,7 @@ import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
+import repositories.Schema._
 
 class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implicit ec: ExecutionContext) {
   private val dbConfig = dbConfigProvider.get[JdbcProfile]
@@ -15,7 +16,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
   import dbConfig._
   import profile.api._
 
-  private class AlertTable(tag: Tag) extends Table[Alert](tag, "ALERT") {
+  private class AlertTable(tag: Tag)(implicit s: Schema) extends Table[Alert](tag, s, "ALERT") {
     def id = column[Int]("ID", O.PrimaryKey, O.AutoInc)
 
     def userId = column[String]("USERID")

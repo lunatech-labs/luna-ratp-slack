@@ -7,6 +7,7 @@ import models.AlertType.AlertType
 import models.{AlertForm, AlertType, DayAlertForm}
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
+import repositories.Schema._
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -24,7 +25,7 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
   )
 
 
-  private class AlertFormTable(tag: Tag) extends Table[AlertForm](tag, "ALERTFORM") {
+  private class AlertFormTable(tag: Tag)(implicit s: Schema) extends Table[AlertForm](tag, s, "alertform") {
 
     def id = column[String]("ID", O.PrimaryKey)
 

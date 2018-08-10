@@ -4,6 +4,7 @@ import javax.inject.Inject
 import models.UserHomeStation
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
+import repositories.Schema._
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -13,7 +14,7 @@ class UserHomeRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(imp
   import dbConfig._
   import profile.api._
 
-  private class UserHomeTable(tag: Tag) extends Table[UserHomeStation](tag, "USERHOME") {
+  private class UserHomeTable(tag: Tag)(implicit s: Schema) extends Table[UserHomeStation](tag, s,"userhome") {
 
     val id = column[Int]("ID", O.PrimaryKey, O.AutoInc)
     val userId = column[String]("USERID")

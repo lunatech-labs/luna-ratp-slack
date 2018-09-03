@@ -14,7 +14,7 @@ libraryDependencies ++= Seq(
   ehcache,
   ws,
   jdbc,
-  "com.lunatech" % "scala-slack-client" % "0.2.3",
+  "com.lunatech" % "scala-slack-client" % "0.2.4",
   "org.postgresql" % "postgresql" % "9.4.1209",
   "com.h2database" % "h2" % "1.4.+",
   "org.flywaydb" %% "flyway-play" % "4.0.+",

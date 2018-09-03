@@ -1,6 +1,7 @@
 package controllers
 
 
+import java.time.DayOfWeek._
 import java.time.{DayOfWeek, LocalDateTime}
 
 import com.lunatech.slack.client.Parser
@@ -28,7 +29,8 @@ class SlackController @Inject()(
   alertFormRepository: AlertFormRepository,
   alertRepository: AlertRepository,
   dialogFlowService: DialogFlowService,
-  userHomeRepository: UserHomeRepository
+  userHomeRepository: UserHomeRepository,
+  welcomeAlertHourRepository: WelcomeAlertHourRepository
 )
   (implicit ec: ExecutionContext) extends AbstractController(cc) {
 
@@ -51,8 +53,8 @@ class SlackController @Inject()(
 
             val sendMessage = (text: String) => slackService.slackClient.postEphemeral(ChatEphemeral(channel = user.id, user = user.id, text = text))
 
-            sendMessage(s"Bonjour <@${user.id}>, bienvenue chez *Lunatech* ! Je suis *RATP BOT*")
-              .flatMap(_ => sendMessage("Laisse moi te poser quelques questions afin de t'aider dans tes trajets de tous les jours"))
+            sendMessage(s"Bonjour <@${user.id}>, bienvenue chez *Lunatech* ! Je suis *RATP BOT*.")
+              .flatMap(_ => sendMessage("Laisse moi te poser quelques questions afin de t'aider dans tes trajets de tous les jours."))
               .flatMap { _ =>
                 val message =
                   ChatEphemeral(channel = user.id, user = user.id, text = "Empruntes-tu le RER ou le Métro pour venir ?")
@@ -140,8 +142,30 @@ class SlackController @Inject()(
     Ok(Json.toJson(slackService.selectSubscriptionMessage))
   }
 
-  def nextRER = Action {
-    Ok(Json.toJson(slackService.selectTransportMessage))
+  def nextRER = Action.async { request =>
+    val command = Parser.slashCommand(request.body.asFormUrlEncoded.getOrElse(Map()))
+
+    val userId = command match {
+      case Success(payload) => Some(payload.user_id)
+      case _ => None
+    }
+
+    val workStationButton = Button("shortcut_button", "Travail").withValue("rers_A_Val d'Europe")
+    val workAttachment = AttachmentField("Shortcut buttons", "shortcut_buttons").addAction(workStationButton)
+
+    val t = userId.map(userHomeRepository.selectStationFromUser).map(_.map {
+      case Some(home) =>
+        AttachmentField("Shortcut buttons", "shortcut_buttons")
+          .addAction(Button("shortcut_button", "Domicile").withValue(s"${home.trainType}_${home.trainCode}_${home.station}"))
+          .addAction(workStationButton)
+      case _ =>
+        workAttachment
+    })
+
+    t match {
+      case Some(x) => x.map(x => Ok(Json.toJson(slackService.selectTransportMessage.addAttachment(x))))
+      case None => Future(Ok(Json.toJson(slackService.selectTransportMessage.addAttachment(workAttachment))))
+    }
   }
 
   def suggestions = Action { request =>
@@ -160,6 +184,7 @@ class SlackController @Inject()(
         case "select_transport" => selectCode(s)
         case "select_code" => selectStation(s)
         case "select_station" => showTrains(s)
+        case "shortcut_buttons" => showTrainWithshortCut(s)
 
         // Subscription
         case "select_subscription" => selectSubscription(s)
@@ -179,9 +204,9 @@ class SlackController @Inject()(
 
         // Welcome messages
         case "more_information" => moreInformation(s)
-        case "welcome_transport" => welcomeTransport(s)
-        case "welcome_code" => welcomeCode(s)
-        case "welcome_station" => welcomeStation(s)
+        case "welcome_home" => welcomeHome(s)
+        case "welcome_alert" => welcomeAlert(s)
+        case "welcome_subscription" => welcomeSubscription(s)
 
         // Not implemented
         //case _ => Future.successful(Ok("Je ne sais pas résoudre cette action"))
@@ -191,7 +216,98 @@ class SlackController @Inject()(
     }
   }
 
-  // TODO Save user's home
+  private def welcomeHome(payload: Payload) = {
+    val name = for {
+      action <- payload.actions.flatMap(_.headOption)
+    } yield action.name
+
+    name match {
+      case Some("Moyen de transport") => welcomeTransport(payload)
+      case Some("Code du transport") => welcomeCode(payload)
+      case Some("La station") => welcomeStation(payload)
+      case _ => Future(Ok)
+    }
+  }
+
+  private def welcomeSubscription(payload: Payload): Future[Result] = {
+    val answer = payload.actions.flatMap(_.headOption).map(_.name)
+    val userId= payload.user.id
+
+    answer match {
+      case Some("yes") =>
+        userHomeRepository.selectStationFromUser(userId).map{ case Some(UserHomeStation(_, trainType, trainCode, _)) =>
+          subscriptionRepo.create(TrafficSubscription(userId, trainType, trainCode))
+        }
+      case _ =>
+    }
+    Future(Ok("J'en ai fini, n'hésite pas à revenir me voir !"))
+  }
+
+  private def welcomeAlert(payload: Payload) = {
+    val name: Option[String] = payload.actions.flatMap(_.headOption).map(_.name)
+
+    val value: Option[String] = for {
+      action <- payload.actions.flatMap(_.headOption)
+      selectedOption <- action.selected_options.flatMap(_.headOption)
+    } yield selectedOption.value
+
+    val message = (name, value) match {
+      case (Some("hour"), Some(v)) =>
+        welcomeAlertHourRepository.changeHour(payload.user.id, v.toInt)
+          .map(_ => None)
+      case (Some("minute"), Some(v)) =>
+        welcomeAlertHourRepository.changeMinute(payload.user.id, v.toInt)
+          .map(_ => None)
+
+      case (Some("ok"), _) =>
+        welcomeAlertHourRepository.getAlert(payload.user.id) flatMap {
+          case Some(WelcomeAlertHour(_, Some(hour), Some(minute))) =>
+
+            userHomeRepository.selectStationFromUser(payload.user.id) flatMap {
+
+              case Some(UserHomeStation(_, transport, code, station)) =>
+                alertRepository.create(
+                  Alert(0, payload.user.id, transport, code, station, hour, minute),
+                  MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY
+                ).map { id =>
+                  //TODO Fire the alert
+                  val now = LocalDateTime.now
+                  val currentDay = now.getDayOfWeek
+
+                  val nextDayToFire = if (currentDay == WEDNESDAY) {
+                    3
+                  } else {
+                    1
+                  }
+
+                  alertService.scheduleAlert(id, now.withHour(hour).withMinute(minute).withSecond(0).plusDays(nextDayToFire))
+
+
+                  Some(Message("C'est enregistré ! À quelle heure veux-tu être prévenu ?")
+                    .addAttachment(AttachmentField("", "").withText(s"*${hour}h$minute*")))
+                } andThen {
+                  case Success(_) =>
+                    slackService.slackClient.postEphemeral {
+                      ChatEphemeral(payload.user.id,
+                        """
+                          | D'accord je vais te prévenir du lundi au vendredi pour les horaires. Tu peux en créer d'autres en tapant */alert* ou la supprimer en faisant */disablealert*. Dernière chose, je peux t'alerter des perturbations sur ta ligne, est-ce que ça t'intéresse ?
+                        """.stripMargin, payload.user.id)
+                        .addAttachment(AttachmentField("welcome_subscription", "welcome_subscription").addAction(Button("yes", "Oui").asPrimaryButton).addAction(Button("no", "Non").asDangerButton))
+                    }
+                }
+
+              case _ => Future.successful(None)
+            }
+
+          case _ => Future.successful(None)
+        }
+
+      case _ => Future.successful(None)
+    }
+
+    message.map(x => x.map(Json.toJson[Message]).map(Ok(_)).getOrElse(Ok))
+  }
+
   private def welcomeStation(payload: Payload): Future[Result] = {
     val message = (for {
       action <- payload.actions.flatMap(_.headOption)
@@ -200,7 +316,7 @@ class SlackController @Inject()(
     } yield {
       value.split("_") match {
         case Array(transport, code, station) =>
-          Some(userHomeRepository.insertOrUpdate(UserHomeStation(0, payload.user.id, transport, code, station)).map {_ =>
+          Some(userHomeRepository.insertOrUpdate(UserHomeStation(payload.user.id, transport, code, station)).map { _ =>
             Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
               .addAttachment(AttachmentField("", "").withText(s"*${ratp.nameOfType(transport)} $code $station*"))
           })
@@ -209,6 +325,25 @@ class SlackController @Inject()(
     }).flatten
 
     message.map(_.map(x => Ok(Json.toJson(x)))).getOrElse(Future.successful(Ok("")))
+      .andThen {
+        case Success(_) => welcomeAlertHourRepository.create(payload.user.id)
+      }
+      .andThen {
+        case Success(_) =>
+          val userId = payload.user.id
+          slackService.slackClient.postEphemeral {
+            val hour = (0 until 24).map(x => BasicField(f"$x%02d h", x.toString))
+            val minutes = (0 until 60).map(x => BasicField(f"$x%02d", x.toString))
+
+            ChatEphemeral(userId, "C'est enregistré ! À quelle heure veux-tu être prévenu ?", userId)
+              .addAttachment(
+                AttachmentField("welcome alert", "welcome_alert")
+                  .addAction(StaticMenu("hour", "Heure", options = Some(hour)))
+                  .addAction(StaticMenu("minute", "Minute", options = Some(minutes)))
+                  .addAction(Button("ok", "Ok").asPrimaryButton)
+              )
+          }
+      }
   }
 
   private def welcomeCode(payload: Payload): Future[Result] = {
@@ -228,7 +363,7 @@ class SlackController @Inject()(
           Some(codeMenu.zip(stationMenu) map { case (c, s) =>
             Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
               .addAttachment(
-                AttachmentField("Moyen de transport", "welcome_station")
+                AttachmentField("welcome_home", "welcome_home")
                   .addAction(transportMenu)
                   .addAction(c)
                   .addAction(s)
@@ -255,7 +390,7 @@ class SlackController @Inject()(
       slackService.getCodeMenu(value) map { menu =>
         Message("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
           .addAttachment(
-            AttachmentField("Moyen de transport", "welcome_code")
+            AttachmentField("Moyen de transport", "welcome_home")
               .addAction(slackService.getSelectTranspotMenu.copy(selected_options = Some(Seq(BasicField(ratp.nameOfType(value), value)))))
               .addAction(menu)
           )
@@ -279,7 +414,7 @@ class SlackController @Inject()(
         slackService.slackClient.postEphemeral {
           chatEphemeral("Génial ! Je peux t'avertir des horaires des trains avant que tu ne partes de chez toi. Pour cela j'ai besoin de ta station de départ.")
             .addAttachment {
-              AttachmentField("welcome station", "welcome_transport")
+              AttachmentField("welcome station", "welcome_home")
                 .addAction(slackService.getSelectTranspotMenu)
             }
         }.map(_ => Message("Empruntes-tu le RER ou le Métro pour venir ?").addAttachment(AttachmentField("", "").withText("*Oui*")))
@@ -380,7 +515,7 @@ class SlackController @Inject()(
           // Delete the form
           .flatMap(_ => alertFormRepository.delete(id))
           .map {
-            _ => Ok("Créer")
+            _ => Ok("Alerte créee")
           } recoverWith {
           case e: Exception => alertForm.map(a =>
             slackService
@@ -605,6 +740,18 @@ class SlackController @Inject()(
     message recoverWith {
       case e: Exception => Future.successful(Ok(Json.toJson(slackService.errorMessage(e.getMessage))))
     }
+  }
+
+  private def showTrainWithshortCut(payload: Payload) = {
+    val value = for {
+      action <- payload.actions.flatMap(_.headOption)
+      value <- action.value
+    } yield value
+
+    (value.map(_.split("_")) map {
+      case Array(t, c, s) => nextRer(t, c, s)
+      case _ => Future(Ok(Json.toJson(slackService.errorMessage("Je n'ai pas compris la station, veuillez recommencer"))))
+    }).getOrElse(Future(Ok(Json.toJson(slackService.errorMessage("Une erreur est surevenue lors du traitement du button.")))))
   }
 
   private def nextRer(transport: String, code: String, station: String): Future[Result] = {

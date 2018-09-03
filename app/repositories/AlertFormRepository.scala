@@ -51,7 +51,7 @@ class AlertFormRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(im
 
   private val alerts = TableQuery[AlertFormTable]
 
-  private class AlertDayForm(tag: Tag) extends Table[DayAlertForm](tag, "ALERTDAYFORM") {
+  private class AlertDayForm(tag: Tag)(implicit s: Schema) extends Table[DayAlertForm](tag, s,"alertdayform") {
     def alertId = column[String]("ID", O.PrimaryKey)
 
     def day = column[Int]("DAY", O.PrimaryKey)

@@ -16,7 +16,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
   import dbConfig._
   import profile.api._
 
-  private class AlertTable(tag: Tag)(implicit s: Schema) extends Table[Alert](tag, s, "ALERT") {
+  private class AlertTable(tag: Tag)(implicit s: Schema) extends Table[Alert](tag, s, "alert") {
     def id = column[Int]("ID", O.PrimaryKey, O.AutoInc)
 
     def userId = column[String]("USERID")
@@ -36,7 +36,7 @@ class AlertRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(implic
 
   private val alerts = TableQuery[AlertTable]
 
-  private class DayAlertTable(tag: Tag) extends Table[DayAlert](tag, "DAYALERT") {
+  private class DayAlertTable(tag: Tag)(implicit s: Schema) extends Table[DayAlert](tag, s, "dayalert") {
     def id = column[Int]("ID", O.PrimaryKey, O.AutoInc)
 
     def alertId = column[Int]("ALERTID")

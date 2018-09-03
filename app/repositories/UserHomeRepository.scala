@@ -16,20 +16,19 @@ class UserHomeRepository @Inject()(dbConfigProvider: DatabaseConfigProvider)(imp
 
   private class UserHomeTable(tag: Tag)(implicit s: Schema) extends Table[UserHomeStation](tag, s,"userhome") {
 
-    val id = column[Int]("ID", O.PrimaryKey, O.AutoInc)
-    val userId = column[String]("USERID")
+    val userId = column[String]("USERID", O.PrimaryKey)
     val trainType = column[String]("TRAINTYPE")
     val trainCode = column[String]("TRAINCODE")
     val station = column[String]("STATION")
 
-    val * = (id, userId, trainType, trainCode, station) <> (UserHomeStation.tupled, UserHomeStation.unapply)
+    val * = (userId, trainType, trainCode, station) <> (UserHomeStation.tupled, UserHomeStation.unapply)
   }
 
   private val userHomes = TableQuery[UserHomeTable]
 
   def insertOrUpdate(userHomeStation: UserHomeStation) = db.run {
-    userHomes.filter(_.userId === userHomeStation.userId).delete
-  } map {_ => db.run(userHomes += userHomeStation)}
+    userHomes.insertOrUpdate(userHomeStation)
+  }
 
   def selectStationFromUser(userId: String): Future[Option[UserHomeStation]] = db.run {
     userHomes.filter(_.userId === userId).result

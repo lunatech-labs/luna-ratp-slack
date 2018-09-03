@@ -19,7 +19,7 @@ case class Traffic(transport: String, line: String, slug: String, title: String,
 
 case class TrafficSubscription(userId: String, transport: String, line: String)
 
-case class UserHomeStation(id: Int, userId: String, trainType: String, trainCode: String, station: String)
+case class UserHomeStation(userId: String, trainType: String, trainCode: String, station: String)
 
 case class Alert(id: Int, userId: String, trainType: String, trainCode: String, station: String, hour: Int, minutes: Int)
 
@@ -28,6 +28,8 @@ case class DayAlert(id: Int, alertId: Int, day: Int)
 case class DayAlertForm(alertId: String, day: Int)
 
 case class AlertWithDays(alert: Alert, days: Option[Seq[DayAlert]])
+
+case class WelcomeAlertHour(user: String, hour: Option[Int] = None, minute: Option[Int] = None)
 
 case class AlertForm(
   id: String,

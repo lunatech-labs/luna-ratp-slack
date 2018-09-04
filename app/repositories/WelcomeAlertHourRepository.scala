@@ -3,7 +3,6 @@ package repositories
 import javax.inject.Inject
 import models.WelcomeAlertHour
 import play.api.db.slick.DatabaseConfigProvider
-import repositories.Schema._
 import slick.jdbc.JdbcProfile
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -14,7 +13,7 @@ class WelcomeAlertHourRepository @Inject()(dbConfigProvider: DatabaseConfigProvi
   import dbConfig._
   import profile.api._
 
-  private class WelcomeAlertHourTable(tag: Tag)(implicit s: Schema) extends Table[WelcomeAlertHour](tag, s,"welcomealerthour") {
+  private class WelcomeAlertHourTable(tag: Tag) extends Table[WelcomeAlertHour](tag, "welcomealerthour") {
 
     val userId = column[String]("USERID", O.PrimaryKey)
     val hour = column[Option[Int]]("HOUR")
@@ -37,7 +36,7 @@ class WelcomeAlertHourRepository @Inject()(dbConfigProvider: DatabaseConfigProvi
     alerts.filter(_.userId === userId).map(_.minute).update(Some(minute))
   }
 
-  def getAlert(userId: String):Future[Option[WelcomeAlertHour]] = db.run {
+  def getAlert(userId: String): Future[Option[WelcomeAlertHour]] = db.run {
     alerts.filter(_.userId === userId).result
   } map (_.headOption)
 

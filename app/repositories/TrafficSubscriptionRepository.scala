@@ -5,7 +5,6 @@ import models.TrafficSubscription
 import play.api.Logger
 import play.api.db.slick.DatabaseConfigProvider
 import slick.jdbc.JdbcProfile
-import repositories.Schema._
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -15,7 +14,7 @@ class TrafficSubscriptionRepository @Inject()(dbConfigProvider: DatabaseConfigPr
   import dbConfig._
   import profile.api._
 
-  private class TrafficSubscriptionTable(tag: Tag)(implicit s: Schema) extends Table[TrafficSubscription](tag, s, "traffic_subscription") {
+  private class TrafficSubscriptionTable(tag: Tag) extends Table[TrafficSubscription](tag, "traffic_subscription") {
     def userId = column[String]("USERID", O.PrimaryKey)
 
     def line = column[String]("LINE", O.PrimaryKey)
